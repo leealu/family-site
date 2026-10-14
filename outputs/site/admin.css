@@ -48,3 +48,7 @@
 .music-result strong,.music-result small{display:block;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
 .music-result button{align-self:center;white-space:nowrap}
 @media(max-width:720px){#contentDialog{max-height:94vh;max-height:94dvh}}
+
+.music-search{grid-template-columns:minmax(0,1fr) minmax(118px,auto)}
+.music-search select{min-width:118px;padding-left:7px;padding-right:24px}
+@media(max-width:400px){.music-search{grid-template-columns:minmax(0,1fr)}}
