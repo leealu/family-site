@@ -27,3 +27,6 @@ desktop.ini
 # Local scratch / task state
 /.superpowers/
 /work/
+
+# Personalized child avatar stays local and out of the public repository
+/outputs/kani-cartoon-avatar.png
