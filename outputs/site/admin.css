@@ -55,3 +55,8 @@
 .music-result{grid-template-columns:38px minmax(0,1fr)}
 .music-result button{grid-column:1/-1;justify-self:stretch;width:100%;min-height:40px;padding:9px 12px;font-size:13px;white-space:normal}
 @media(max-width:720px){.music-result{grid-template-columns:34px minmax(0,1fr)}.music-result button{min-height:42px}}
+
+/* Keep interest cards in one column and contain provider search results within the active card. */
+#interestEditorList{grid-template-columns:minmax(0,1fr);align-items:start}
+#interestEditorList .music-search-results{max-height:min(42vh,420px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:4px}
+
