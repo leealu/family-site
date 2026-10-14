@@ -51,7 +51,7 @@ function openAuth() {
   $("#authError").textContent="";authDialog.showModal();
 }
 function setText(id,value){const el=$("#"+id);if(el)el.textContent=value??"";}
-function setFavicon(value){const link=$("#siteFavicon");if(!link)return;const emoji=escapeHtml(String(value||"🌼").trim().slice(0,8)||"🌼");const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="24" fill="#fff6f3"/><text x="50%" y="53%" dominant-baseline="middle" text-anchor="middle" font-size="76">${emoji}</text></svg>`;link.href=`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;}
+function setFavicon(value){const link=$("#siteFavicon");if(!link)return;const raw=String(value||"🌼").trim().slice(0,8)||"🌼";if(raw==="🌼"){link.href="/favicon.svg?v=20261015-1";return;}const emoji=escapeHtml(raw);const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="24" fill="#fff6f3"/><text x="50%" y="53%" dominant-baseline="middle" text-anchor="middle" font-size="76">${emoji}</text></svg>`;link.href=`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;}
 function applyContent(content) {
   content=content||CONTENT_DEFAULTS;
   document.title=content.siteName;

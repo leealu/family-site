@@ -772,6 +772,8 @@ class Handler(BaseHTTPRequestHandler):
                 rows = db.execute("SELECT id,date,title,story,age_label,media,created_at FROM records ORDER BY date DESC, created_at DESC").fetchall()
                 visible_records = [record_dict(row) for row in rows]
                 return self.send_json(200, {"setupRequired": setup_required, "authenticated": bool(token), "sessionExpiresAt":session_row["expires_at"] if session_row else None, "records": visible_records, "content": content})
+        if path == "/favicon.svg":
+            return self.send_file(ROOT / "favicon.svg", "image/svg+xml; charset=utf-8")
         media_match = re.fullmatch(r"/media/([a-f0-9]{32}\.[a-z0-9]{2,5})", path)
         if media_match:
             filename = media_match.group(1)
