@@ -52,3 +52,5 @@
 .music-search{grid-template-columns:minmax(0,1fr) minmax(118px,auto)}
 .music-search select{min-width:118px;padding-left:7px;padding-right:24px}
 @media(max-width:400px){.music-search{grid-template-columns:minmax(0,1fr)}}
+
+.music-source-row select{box-sizing:border-box;width:100%;min-width:0;max-width:100%;border:1px solid #eee3e8;border-radius:10px;padding:9px;background:#fff;font:inherit;font-size:12px}
