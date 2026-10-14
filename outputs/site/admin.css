@@ -39,7 +39,6 @@
 .netease-add input,.music-search input,.music-search select{min-width:0;max-width:100%}
 @media(max-width:760px){#contentDialog{width:calc(100vw - 16px);max-width:calc(100vw - 16px);padding:16px 12px}.editor-grid,.editor-cards{grid-template-columns:minmax(0,1fr)}.editor-group{padding:12px}}
 
-
 /* Keep long song and album titles readable instead of clipping them with ellipses. */
 #contentDialog{max-height:92vh;max-height:92dvh;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
 .music-search-results{overflow:visible}
@@ -48,14 +47,10 @@
 .music-result strong,.music-result small{display:block;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
 .music-result button{align-self:center;white-space:nowrap}
 @media(max-width:720px){#contentDialog{max-height:94vh;max-height:94dvh}}
-
 .music-search{grid-template-columns:minmax(0,1fr) minmax(118px,auto)}
 .music-search select{min-width:118px;padding-left:7px;padding-right:24px}
 @media(max-width:400px){.music-search{grid-template-columns:minmax(0,1fr)}}
-
 .music-source-row select{box-sizing:border-box;width:100%;min-width:0;max-width:100%;border:1px solid #eee3e8;border-radius:10px;padding:9px;background:#fff;font:inherit;font-size:12px}
-
-
 /* Keep the song-selection action easy to see inside narrow desktop interest cards. */
 .music-result{grid-template-columns:38px minmax(0,1fr)}
 .music-result button{grid-column:1/-1;justify-self:stretch;width:100%;min-height:40px;padding:9px 12px;font-size:13px;white-space:normal}
