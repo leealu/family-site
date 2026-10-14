@@ -4,9 +4,10 @@
 
 ## Ubuntu 一键安装
 
-把整个 `site` 文件夹复制到 Ubuntu 服务器后，在该目录运行：
+把 Release 中的部署包解压到 Ubuntu 服务器的部署目录。以下命令统一假设目录为 `/opt/family-site`；如果你选用自己的目录，请把后续命令中的 `/opt/family-site` 统一替换为该目录。进入部署目录后运行：
 
 ```bash
+cd /opt/family-site
 bash install-ubuntu.sh
 ```
 
@@ -14,25 +15,42 @@ bash install-ubuntu.sh
 
 默认端口为 `8000`。脚本会生成 `.env`；可在启动前修改 `SITE_PORT`。默认使用 HTTP，适用于本机或可信家庭局域网内试用。若需要从互联网访问，请先配置 HTTPS 反向代理，并把 `.env` 中的 `COOKIE_SECURE` 设为 `1`，然后运行 `docker compose up -d`。
 
-成长记录、首页内容和上传的图片/视频/音频保存在当前目录的 `data/` 中（服务器上是 `/opt/family-site/data`），容器重建或升级时会保留。首次部署请运行 `mkdir -p data && chown 10001:10001 data`，并定期备份此目录。
+成长记录、首页内容和上传的图片/视频/音频保存在 `/opt/family-site/data/` 中，容器重建或升级时会保留。首次部署请运行：
+
+```bash
+cd /opt/family-site
+mkdir -p data
+sudo chown 10001:10001 data
+```
+
+并定期备份 `data/`。
 
 如果旧版本使用 Docker 命名卷 `family-data`，改成 `./data:/app/data` 后旧数据仍留在原卷中；先迁移旧卷数据，再清理任何 Docker 卷。登录后台后也可在“编辑网站”中下载或恢复包含成长日记、页面设置和媒体附件的完整备份。
 
 ## 手动 Docker Compose
 
-已安装 Docker Engine 和 Compose 插件时，在本目录运行：
+已安装 Docker Engine 和 Compose 插件时，在 `/opt/family-site` 运行：
 
 ```bash
+cd /opt/family-site
 docker compose up -d --build
 ```
 
-查看状态：`docker compose ps`。查看日志：`docker compose logs -f`。停止服务并保留记录：`docker compose down`。
+查看状态、日志和停止服务时，也先进入同一个目录：
+
+```bash
+cd /opt/family-site
+docker compose ps
+docker compose logs -f
+docker compose down
+```
 
 ## 本地启动
 
 需要 Python 3.10 或更新版本。在本目录打开终端并运行：
 
 ```powershell
+cd /opt/family-site
 python server.py
 ```
 
@@ -86,3 +104,4 @@ Cloudflare 的 Browser Cache TTL 应设置为尊重源站响应头，Edge Cache 
 当前网站是第一种客户端。未来的小程序目标是承接整站功能（首页、兴趣相册、成长日记、家长管理、打卡和学习工作台），作为独立客户端使用同一套后端服务与家庭数据，不把网页塞进小程序 WebView，也不让小程序直接读服务器文件或 SQLite。
 
 现在日记、兴趣内容和媒体通过后端 JSON API 读写，网页只负责展示和管理。正式开发小程序前，再将稳定业务接口整理为版本化 API，加入微信登录 code 的服务端兑换、适用于多客户端的令牌/权限机制，并为打卡、学习计划、任务记录等设计独立数据模型。微信 AppSecret 只能保存在服务器端，不能写进网页或小程序包。
+
