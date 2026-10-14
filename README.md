@@ -42,4 +42,3 @@ docker compose up -d --build
 部署数据保存在 `data/`，包括家庭数据库和上传媒体。升级源码时不要删除或覆盖服务器上的 `data/`。运行数据、密钥和上传的儿童照片/视频已通过 `.gitignore` 排除；不要将这些内容提交到 Git 仓库。
 
 具体安装和备份方式见 [`outputs/site/README.md`](outputs/site/README.md)。
-
