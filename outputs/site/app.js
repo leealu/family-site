@@ -190,9 +190,10 @@ function render() {
   const contentButton=$("#contentButton");contentButton.hidden=!view.authenticated;
   if(view.authenticated&&view.sessionExpiresAt){const remaining=Date.parse(view.sessionExpiresAt)-Date.now();sessionExpiryTimer=setTimeout(()=>loadState(),Math.max(0,remaining));}
   const area=$("#diaryArea");
-  const diarySection=$("#diary");diarySection.hidden=false;$("#navDiary").hidden=false;
+  const diarySection=$("#diary"),navDiary=$("#navDiary");diarySection.hidden=!view.authenticated;navDiary.hidden=!view.authenticated;
+  const heroDiaryLink=document.querySelector(".hero-copy > a.button");heroDiaryLink.href=view.authenticated?"#diary":"#likes";$("#heroButton").textContent=view.authenticated?content.heroButton:"看看兴趣角";
   const diaryLink=area.ownerDocument.querySelector('a[href="#diary"]');if(diaryLink)diaryLink.onclick=null;
-  const navDiary=$("#navDiary");if(navDiary)navDiary.onclick=null;
+  if(navDiary)navDiary.onclick=null;
   area.innerHTML=`${diaryIntro()}<section class="diary-book" aria-label="可翻页成长记事本"><div class="notebook-title"><span>📒</span><div><strong>小小成长笔记本</strong><small>把每个小小的长大瞬间，认真收藏起来</small></div><span class="title-sparkle">✦</span></div><div class="diary-toolbar"><label>翻阅方式<select id="diarySort"><option value="date">按日期</option><option value="age">按年龄阶段</option></select></label><span>点年龄书签，跳到那段成长时光</span></div><nav id="diaryBookmarks" class="diary-bookmarks" aria-label="年龄书签"></nav><div id="diaryBook"></div></section>`;
   renderDiaryBook();
   if(!view.authenticated&&contentDialog.open)contentDialog.close();

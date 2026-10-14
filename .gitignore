@@ -19,6 +19,7 @@ desktop.ini
 # Generated deployment copies and previews; canonical source is outputs/site/
 /outputs/family-site/
 /outputs/family-site.zip
+/outputs/family-site-*.zip
 /outputs/index.html
 /outputs/*.log
 

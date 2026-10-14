@@ -475,7 +475,8 @@ class Handler(BaseHTTPRequestHandler):
                 token = self.session(db)
                 session_row = db.execute("SELECT expires_at FROM sessions WHERE token_hash=?", (token_hash(token),)).fetchone() if token else None
                 rows = db.execute("SELECT id,date,title,story,age_label,media,created_at FROM records ORDER BY date DESC, created_at DESC").fetchall()
-                return self.send_json(200, {"setupRequired": setup_required, "authenticated": bool(token), "sessionExpiresAt":session_row["expires_at"] if session_row else None, "records": [record_dict(row) for row in rows], "content": content})
+                visible_records = [record_dict(row) for row in rows] if token else []
+                return self.send_json(200, {"setupRequired": setup_required, "authenticated": bool(token), "sessionExpiresAt":session_row["expires_at"] if session_row else None, "records": visible_records, "content": content})
         media_match = re.fullmatch(r"/media/([a-f0-9]{32}\.[a-z0-9]{2,5})", path)
         if media_match:
             with connect() as db:
