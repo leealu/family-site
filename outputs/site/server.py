@@ -297,7 +297,13 @@ def search_music_source(source, query, kind="song"):
     for row in rows[:20]:
         if not isinstance(row, dict):
             continue
-        item_id = str(row.get("id", row.get("url_id", "")))
+        item_id = str(row.get("id") or row.get("url_id") or "").strip()
+        if not item_id:
+            play_url = row.get("url", "")
+            if isinstance(play_url, str) and len(play_url) <= 4000:
+                play_params = parse_qs(urlparse(play_url).query)
+                if play_params.get("type") == ["url"]:
+                    item_id = str((play_params.get("id") or [""])[0]).strip()
         title = str(row.get("name", row.get("title", ""))).strip()[:160]
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", item_id) or not title:
             continue
