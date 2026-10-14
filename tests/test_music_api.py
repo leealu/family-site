@@ -22,12 +22,12 @@ class MetingHandler(BaseHTTPRequestHandler):
         self.server.requests.append(query)
         if query.get("type") == ["search"]:
             body = json.dumps([{
-                "id": "123456",
                 "title": "小星星",
                 "author": "测试歌手",
                 "album": "测试专辑",
+                "url": "https://music.example.invalid/api?server=netease&type=url&id=123456&auth=temporary-signature",
                 "pic": "https://cdn.example.invalid/cover.jpg",
-                "time": 180000,
+                "lrc": "https://music.example.invalid/api?server=netease&type=lrc&id=123456&auth=temporary-signature",
             }], ensure_ascii=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -76,7 +76,7 @@ class MusicApiCompatibilityTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["itemId"], "123456")
         self.assertEqual(results[0]["title"], "小星星")
-        self.assertEqual(results[0]["durationSeconds"], 180)
+        self.assertEqual(results[0]["durationSeconds"], 0)
         self.assertNotIn("token", self.server.requests[0])
 
     def test_playback_signs_request_and_uses_redirect_location(self):
