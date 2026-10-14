@@ -85,8 +85,8 @@ async function prepareImageForUpload(file){
   if(!file.type.startsWith("image/")&&!['jpg','jpeg','png','webp','heic','heif'].includes(ext))return file;
   const sourceUrl=URL.createObjectURL(file);
   try{
-    const image=new Image();image.decoding="async";image.src=sourceUrl;
-    await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error("这张图片无法在当前浏览器中读取；请将 iPhone 的相机格式设为“兼容性最佳”后重试。"));});
+    const image=new Image();image.decoding="async";
+    await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error((["heic","heif"].includes(ext)||["image/heic","image/heif"].includes(file.type))?"当前浏览器无法读取 HEIC/HEIF 图片，请先转为 PNG 或 JPEG；也可将 iPhone 相机格式设为“兼容性最佳”。":"浏览器未能读取这张图片，请重新选择文件或刷新页面后重试。"));image.src=sourceUrl;});
     const scale=Math.min(1,1920/Math.max(image.naturalWidth,image.naturalHeight));
     const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
     const context=canvas.getContext("2d");if(!context)throw new Error("无法压缩图片，请重试。");context.drawImage(image,0,0,canvas.width,canvas.height);
