@@ -17,10 +17,22 @@
 
 ## 部署
 
-网站源码和部署文件位于 `outputs/site/`。需要 Ubuntu 服务器时，可将该目录复制到服务器后运行一键安装脚本：
+`outputs/site/` 是唯一的最新源码目录。生成可部署目录和 ZIP 时，在仓库根目录运行：
+
+```powershell
+python scripts/package_site.py
+```
+
+默认生成 `outputs/family-site/` 和 `outputs/family-site.zip`。每次运行都会从 `outputs/site/` 全量重建，新增和修改的文件会更新，源码中已删除的旧文件也会从部署副本清除。需要带版本号的产物时，可指定名称，例如：
+
+```powershell
+python scripts/package_site.py --name family-site-v2026.10.15.5
+```
+
+把生成的 ZIP 上传到 Ubuntu 服务器并解压到服务器部署目录。以下统一以 `/opt/family-site` 为例；如果你选择其他目录，请将命令中的这个路径统一替换成自己的目录。然后运行一键安装脚本：
 
 ```bash
-cd /你的部署目录/site
+cd /opt/family-site
 bash install-ubuntu.sh
 ```
 
@@ -29,7 +41,7 @@ bash install-ubuntu.sh
 如果服务器已安装 Docker 和 Compose 插件，也可手动启动：
 
 ```bash
-cd outputs/site
+cd /opt/family-site
 mkdir -p data
 sudo chown 10001:10001 data
 docker compose up -d --build
@@ -44,7 +56,7 @@ docker compose down        # 停止服务，保留家庭数据
 docker compose up -d --build  # 更新源码后重新构建并启动
 ```
 
-数据库、上传媒体和备份保存在 `outputs/site/data/`。升级或重建容器时会保留该目录；请定期备份，也不要执行会删除数据卷的清理命令。公网访问前请配置 HTTPS 反向代理，并将 `.env` 中的 `COOKIE_SECURE` 设为 `1`。完整安装、迁移、备份和安全说明见 [`outputs/site/README.md`](outputs/site/README.md)。
+服务器数据库、上传媒体和备份保存在 `/opt/family-site/data/`。升级时用新包覆盖程序文件，并保留服务器已有的 `data/` 和 `.env`；重建容器时数据也会保留。请定期备份，也不要执行会删除数据卷的清理命令。公网访问前请配置 HTTPS 反向代理，并在 `/opt/family-site/.env` 中将 `COOKIE_SECURE` 设为 `1`。完整安装、迁移、备份和安全说明见 [`outputs/site/README.md`](outputs/site/README.md)。
 
 ## 在线音乐音源
 
@@ -66,17 +78,16 @@ docker compose up -d --build  # 更新源码后重新构建并启动
 需要 Python 3.10 或更新版本：
 
 ```powershell
-cd outputs/site
-python server.py
+python outputs/site/server.py
 ```
 
 然后访问 `http://127.0.0.1:8000`。本地运行会在 `outputs/site/data/` 保存数据库和媒体文件。
 
 ## 仓库目录
 
-- `outputs/site/`：可维护的网站源码、Docker 配置和安装脚本。
+- `outputs/site/`：唯一的最新网站源码、Docker 配置和安装脚本。
 - `docs/superpowers/specs/`、`docs/superpowers/plans/`：功能设计与实施计划。
-- `outputs/family-site/`、`outputs/family-site.zip`：本地生成的部署副本，不纳入 Git。
+- `outputs/family-site/`、`outputs/family-site.zip`：由打包脚本从最新源码全量生成的部署副本，不纳入 Git。
 
 家庭数据库、上传媒体、密钥和服务器备份不应提交到公开仓库。部署目录和数据迁移细节见 [`outputs/site/README.md`](outputs/site/README.md)。
 
