@@ -54,3 +54,9 @@
 @media(max-width:400px){.music-search{grid-template-columns:minmax(0,1fr)}}
 
 .music-source-row select{box-sizing:border-box;width:100%;min-width:0;max-width:100%;border:1px solid #eee3e8;border-radius:10px;padding:9px;background:#fff;font:inherit;font-size:12px}
+
+
+/* Keep the song-selection action easy to see inside narrow desktop interest cards. */
+.music-result{grid-template-columns:38px minmax(0,1fr)}
+.music-result button{grid-column:1/-1;justify-self:stretch;width:100%;min-height:40px;padding:9px 12px;font-size:13px;white-space:normal}
+@media(max-width:720px){.music-result{grid-template-columns:34px minmax(0,1fr)}.music-result button{min-height:42px}}
