@@ -15,7 +15,8 @@ import tarfile
 import tempfile
 import time
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DIARY_DATA_DIR", ROOT / "data"))
@@ -232,30 +233,52 @@ def sanitize_music_sources(sources):
         platform = str(item.get("platform", "")).strip().lower()
         enabled = bool(item.get("enabled", True))
         key = str(item.get("apiKey", ""))
+        auth_mode = str(item.get("authMode", "token"))
         if not re.fullmatch(r"[a-f0-9]{32}", source_id) or source_id in seen:
             raise ValueError("音源标识无效。")
         seen.add(source_id)
         parsed = urlparse(base_url)
         if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password or len(base_url) > 1000:
             raise ValueError("音源 API 地址必须是有效的 HTTP 或 HTTPS 地址。")
-        if not re.fullmatch(r"[a-z0-9_-]{1,40}", platform) or not name or len(key) > 500:
+        if not re.fullmatch(r"[a-z0-9_-]{1,40}", platform) or not name or len(key) > 500 or auth_mode not in ("token", "meting-hmac"):
             raise ValueError("请填写音源名称、平台代码和有效配置。")
-        result.append({"id":source_id,"name":name,"baseUrl":base_url,"platform":platform,"apiKey":key,"enabled":enabled})
+        if auth_mode == "meting-hmac" and not key:
+            raise ValueError("Meting-API HMAC 鉴权需要填写服务密钥。")
+        result.append({"id":source_id,"name":name,"baseUrl":base_url,"platform":platform,"apiKey":key,"authMode":auth_mode,"enabled":enabled})
     return result
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        return None
 
 def meting_request(source, params, max_bytes=512_000):
     query = {"server":source["platform"], **params}
     if source.get("apiKey"):
-        query["token"] = source["apiKey"]
+        if source.get("authMode", "token") == "meting-hmac" and params.get("type") in ("lrc", "url", "pic"):
+            message = f"{source['platform']}{params['type']}{params.get('id', '')}"
+            query["token"] = hmac.new(source["apiKey"].encode("utf-8"), message.encode("utf-8"), hashlib.sha1).hexdigest()
+        elif source.get("authMode", "token") != "meting-hmac":
+            query["token"] = source["apiKey"]
     separator = "&" if "?" in source["baseUrl"] else "?"
     url = source["baseUrl"] + separator + urlencode(query)
     request = Request(url, headers={"Accept":"application/json, text/plain;q=0.9", "User-Agent":"FamilySite/1.0"})
-    with urlopen(request, timeout=8) as response:
-        if response.status < 200 or response.status >= 300:
+    try:
+        with build_opener(_NoRedirectHandler()).open(request, timeout=8) as response:
+            if response.status < 200 or response.status >= 300:
+                raise ValueError("音源服务暂时不可用。")
+            if int(response.headers.get("Content-Length", "0") or 0) > max_bytes:
+                raise ValueError("音源响应过大。")
+            body = response.read(max_bytes + 1)
+    except HTTPError as response:
+        try:
+            if params.get("type") == "url" and response.code in (301, 302, 303, 307, 308):
+                location = response.headers.get("Location", "").strip()
+                if not location or len(location.encode("utf-8")) > max_bytes:
+                    raise ValueError("音源播放跳转地址无效。")
+                return location.encode("utf-8")
             raise ValueError("音源服务暂时不可用。")
-        if int(response.headers.get("Content-Length", "0") or 0) > max_bytes:
-            raise ValueError("音源响应过大。")
-        body = response.read(max_bytes + 1)
+        finally:
+            response.close()
     if len(body) > max_bytes:
         raise ValueError("音源响应过大。")
     return body
@@ -545,7 +568,7 @@ class Handler(BaseHTTPRequestHandler):
             with connect() as db:
                 if not self.session(db):
                     return self.send_json(401, {"error":"请先登录家长账号。"})
-                sources = [{"id":item["id"],"name":item["name"],"baseUrl":item["baseUrl"],"platform":item["platform"],"enabled":item["enabled"],"hasKey":bool(item.get("apiKey"))} for item in get_music_sources(db)]
+                sources = [{"id":item["id"],"name":item["name"],"baseUrl":item["baseUrl"],"platform":item["platform"],"authMode":item.get("authMode", "token"),"enabled":item["enabled"],"hasKey":bool(item.get("apiKey"))} for item in get_music_sources(db)]
                 return self.send_json(200, {"sources":sources})
         if path == "/api/music/search":
             with connect() as db:
@@ -1108,7 +1131,7 @@ class Handler(BaseHTTPRequestHandler):
                         source["apiKey"] = existing[source["id"]].get("apiKey", "")
                 db.execute("INSERT INTO settings(key,value) VALUES('music_sources',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (json.dumps(sources, ensure_ascii=False),))
                 db.commit()
-                return self.send_json(200, {"ok":True,"sources":[{"id":item["id"],"name":item["name"],"baseUrl":item["baseUrl"],"platform":item["platform"],"enabled":item["enabled"],"hasKey":bool(item.get("apiKey"))} for item in sources]})
+                return self.send_json(200, {"ok":True,"sources":[{"id":item["id"],"name":item["name"],"baseUrl":item["baseUrl"],"platform":item["platform"],"authMode":item.get("authMode", "token"),"enabled":item["enabled"],"hasKey":bool(item.get("apiKey"))} for item in sources]})
             if path == "/api/content":
                 try:
                     content = validate_content(data)
