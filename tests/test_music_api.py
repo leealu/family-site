@@ -21,12 +21,13 @@ class MetingHandler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
         self.server.requests.append(query)
         if query.get("type") == ["search"]:
+            cover_endpoint = f"http://127.0.0.1:{self.server.server_port}/api?server=netease&type=pic&id=album-cover&auth=temporary-signature"
             body = json.dumps([{
                 "title": "小星星",
                 "author": "测试歌手",
                 "album": "测试专辑",
                 "url": "https://music.example.invalid/api?server=netease&type=url&id=123456&auth=temporary-signature",
-                "pic": "https://cdn.example.invalid/cover.jpg",
+                "pic": cover_endpoint,
                 "lrc": "https://music.example.invalid/api?server=netease&type=lrc&id=123456&auth=temporary-signature",
             }], ensure_ascii=False).encode("utf-8")
             self.send_response(200)
@@ -38,6 +39,21 @@ class MetingHandler(BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header("Location", "https://cdn.example.invalid/song.mp3")
             self.end_headers()
+        elif query.get("type") == ["pic"]:
+            self.send_response(302)
+            self.send_header("Location", "https://cdn.example.invalid/cover.jpg")
+            self.end_headers()
+        elif query.get("type") == ["song"]:
+            body = json.dumps([{
+                "id": "123456",
+                "title": "小星星",
+                "pic": f"http://127.0.0.1:{self.server.server_port}/api?server=netease&type=pic&id=album-cover&auth=temporary-signature",
+            }], ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         else:
             self.send_error(400)
 
@@ -78,6 +94,24 @@ class MusicApiCompatibilityTests(unittest.TestCase):
         self.assertEqual(results[0]["title"], "小星星")
         self.assertEqual(results[0]["durationSeconds"], 0)
         self.assertNotIn("token", self.server.requests[0])
+
+    def test_search_resolves_internal_meting_cover_endpoint_for_browser(self):
+        results = site_server.search_music_source(self.source, "小星星")
+        self.assertEqual(results[0]["coverUrl"], "https://cdn.example.invalid/cover.jpg")
+        self.assertEqual(self.server.requests[1]["type"], ["pic"])
+        self.assertEqual(self.server.requests[1]["id"], ["album-cover"])
+        expected = hmac.new(
+            self.source["apiKey"].encode(),
+            b"neteasepicalbum-cover",
+            hashlib.sha1,
+        ).hexdigest()
+        self.assertEqual(self.server.requests[1]["token"], [expected])
+
+    def test_saved_track_without_cover_can_resolve_cover_from_song_details(self):
+        cover = site_server.resolve_saved_music_cover(self.source, {"itemId":"123456"})
+        self.assertEqual(cover, "https://cdn.example.invalid/cover.jpg")
+        self.assertEqual(self.server.requests[0]["type"], ["song"])
+        self.assertEqual(self.server.requests[1]["type"], ["pic"])
 
     def test_playback_signs_request_and_uses_redirect_location(self):
         media_url = site_server.resolve_music_url(self.source, "123456")

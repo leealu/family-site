@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Small, dependency-free family diary web app."""
 from datetime import date, datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import hashlib
@@ -177,7 +178,14 @@ def validate_content(data):
                 match = re.fullmatch(r"/media/([a-f0-9]{32}\.(?:jpg|jpeg|png|webp|gif|mp4|webm|mov|mp3|m4a|aac|ogg|wav))", str(url))
                 if not match or MEDIA_SUFFIXES[Path(match.group(1)).suffix] != kind:
                     raise ValueError("上传作品地址无效。")
-                entry["media"].append({"type":kind,"title":title,"name":name,"url":url})
+                clean_asset = {"type":kind,"title":title,"name":name,"url":url}
+                if kind == "audio" and asset.get("coverUrl"):
+                    cover_url = str(asset["coverUrl"])
+                    cover_match = re.fullmatch(r"/media/([a-f0-9]{32}\.(?:jpg|jpeg|png|webp|gif))", cover_url)
+                    if not cover_match:
+                        raise ValueError("歌曲封面地址无效。")
+                    clean_asset["coverUrl"] = cover_url
+                entry["media"].append(clean_asset)
             elif kind == "netease":
                 parsed = urlparse(str(url))
                 if parsed.scheme != "https" or parsed.hostname not in {"music.163.com", "www.music.163.com"}:
@@ -271,10 +279,10 @@ def meting_request(source, params, max_bytes=512_000):
             body = response.read(max_bytes + 1)
     except HTTPError as response:
         try:
-            if params.get("type") == "url" and response.code in (301, 302, 303, 307, 308):
+            if params.get("type") in ("url", "pic") and response.code in (301, 302, 303, 307, 308):
                 location = response.headers.get("Location", "").strip()
                 if not location or len(location.encode("utf-8")) > max_bytes:
-                    raise ValueError("音源播放跳转地址无效。")
+                    raise ValueError("音源资源跳转地址无效。")
                 return location.encode("utf-8")
             raise ValueError("音源服务暂时不可用。")
         finally:
@@ -282,6 +290,63 @@ def meting_request(source, params, max_bytes=512_000):
     if len(body) > max_bytes:
         raise ValueError("音源响应过大。")
     return body
+
+def resolve_music_cover(source, row):
+    cover_id = str(row.get("pic_id") or row.get("picId") or "").strip()
+    direct_cover = ""
+    for field in ("pic", "cover", "picUrl", "coverUrl"):
+        value = row.get(field)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        value = value.strip()
+        parsed = urlparse(value)
+        query = parse_qs(parsed.query)
+        if query.get("type") == ["pic"] and query.get("id"):
+            cover_id = query["id"][0].strip()
+            break
+        if parsed.scheme == "https" and parsed.hostname and len(value) <= 1000:
+            direct_cover = value
+            break
+    if not cover_id:
+        return direct_cover
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", cover_id):
+        return direct_cover
+    try:
+        body = meting_request(source, {"type":"pic", "id":cover_id}, max_bytes=32_000)
+        resolved = body.decode("utf-8", errors="replace").strip()
+    except (OSError, ValueError, UnicodeError):
+        return direct_cover
+    parsed = urlparse(resolved)
+    if parsed.scheme == "https" and parsed.hostname and len(resolved) <= 4000:
+        return resolved
+    return direct_cover
+
+def resolve_saved_music_cover(source, track):
+    item_id = str(track.get("itemId", "")).strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", item_id):
+        return ""
+    try:
+        resource_type = "album" if track.get("kind") == "album" else "song"
+        body = meting_request(source, {"type":resource_type, "id":item_id})
+        rows = json.loads(body.decode("utf-8"))
+    except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
+        return ""
+    if isinstance(rows, dict):
+        rows = rows.get("data", rows.get("result", rows))
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list):
+        return ""
+    for row in rows[:20]:
+        if not isinstance(row, dict):
+            continue
+        row_id = str(row.get("id") or row.get("url_id") or "").strip()
+        if row_id and row_id != item_id:
+            continue
+        cover = resolve_music_cover(source, row)
+        if cover:
+            return cover
+    return ""
 
 def search_music_source(source, query, kind="song"):
     body = meting_request(source, {"type":"search", "id":query, "limit":"20"})
@@ -294,6 +359,7 @@ def search_music_source(source, query, kind="song"):
     if not isinstance(rows, list):
         return []
     results = []
+    cover_rows = []
     for row in rows[:20]:
         if not isinstance(row, dict):
             continue
@@ -313,16 +379,19 @@ def search_music_source(source, query, kind="song"):
         album = row.get("album", row.get("collection", ""))
         if isinstance(album, dict):
             album = album.get("name", "")
-        cover = str(row.get("pic", row.get("cover", row.get("picUrl", ""))))
-        if not (cover.startswith("https://") and len(cover) <= 1000):
-            cover = ""
+        cover_rows.append(row)
         try:
             duration = int(row.get("duration", row.get("time", 0)) or 0)
             if duration > 3600:
                 duration //= 1000
         except (TypeError, ValueError):
             duration = 0
-        results.append({"providerId":source["id"],"providerName":source["name"],"itemId":item_id,"kind":kind,"title":title,"creator":str(artist)[:160],"collection":str(album)[:160],"coverUrl":cover,"durationSeconds":max(0, min(duration, 86400))})
+        results.append({"providerId":source["id"],"providerName":source["name"],"itemId":item_id,"kind":kind,"title":title,"creator":str(artist)[:160],"collection":str(album)[:160],"coverUrl":"","durationSeconds":max(0, min(duration, 86400))})
+    if results:
+        with ThreadPoolExecutor(max_workers=min(5, len(results))) as executor:
+            covers = executor.map(lambda row: resolve_music_cover(source, row), cover_rows)
+            for result, cover in zip(results, covers):
+                result["coverUrl"] = cover
     return results
 
 def resolve_music_url(source, item_id):
@@ -416,9 +485,9 @@ def referenced_media(db):
     content = read_content(db)
     for item in content.get("interests", []):
         for asset in item.get("media", []):
-            url = asset.get("url", "")
-            if isinstance(url, str) and url.startswith("/media/"):
-                referenced.add(url.rsplit("/", 1)[-1])
+            for url in (asset.get("url", ""), asset.get("coverUrl", "")):
+                if isinstance(url, str) and url.startswith("/media/"):
+                    referenced.add(url.rsplit("/", 1)[-1])
     mascot = content.get("heroMascot", "")
     if isinstance(mascot, str) and mascot.startswith("/media/"):
         referenced.add(mascot.rsplit("/", 1)[-1])
@@ -438,10 +507,10 @@ def public_media_referenced(db, filename):
     if isinstance(mascot, str) and mascot.rsplit("/", 1)[-1] == filename:
         return True
     if any(
-        asset.get("url", "").rsplit("/", 1)[-1] == filename
+        filename in {asset.get("url", "").rsplit("/", 1)[-1], asset.get("coverUrl", "").rsplit("/", 1)[-1]}
         for item in content.get("interests", [])
         for asset in item.get("media", [])
-        if isinstance(asset.get("url", ""), str)
+        if isinstance(asset.get("url", ""), str) and isinstance(asset.get("coverUrl", ""), str)
     ):
         return True
     for row in db.execute("SELECT media FROM records"):
@@ -595,6 +664,32 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         errors.append({"providerName":source["name"],"message":"搜索失败或暂时无法连接。"})
                 return self.send_json(200, {"results":results[:60],"errors":errors})
+        cover_match = re.fullmatch(r"/api/music/cover/([a-f0-9]{32})", path)
+        if cover_match:
+            key = cover_match.group(1)
+            with connect() as db:
+                content = read_content(db)
+                asset = next((asset for item in content.get("interests", []) for asset in item.get("media", []) if asset.get("type") == "provider-track" and asset.get("savedItemKey") == key), None)
+                if not asset:
+                    return self.send_json(404, {"error":"找不到这首歌曲。"})
+                track = asset.get("track", {})
+                source = next((item for item in get_music_sources(db) if item.get("id") == track.get("providerId") and item.get("enabled")), None)
+                if not source:
+                    return self.send_json(503, {"error":"这个音源未配置或已停用。"})
+                cover = track.get("coverUrl", "")
+                if not (isinstance(cover, str) and urlparse(cover).scheme == "https" and urlparse(cover).hostname):
+                    cover = resolve_saved_music_cover(source, track)
+                    if not cover:
+                        return self.send_json(404, {"error":"音源暂时没有提供这首歌曲的封面。"})
+                    track["coverUrl"] = cover
+                    db.execute("INSERT INTO settings(key,value) VALUES('page_content',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (json.dumps(content, ensure_ascii=False),))
+                    db.commit()
+                self.send_response(302)
+                self.send_header("Location", cover)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                return
         play_match = re.fullmatch(r"/api/music/play/([a-f0-9]{32})", path)
         if play_match:
             key = play_match.group(1)
@@ -628,6 +723,12 @@ class Handler(BaseHTTPRequestHandler):
                 for asset in item.get("media", [])
                 if asset.get("type") in ("image", "video", "audio")
             }
+            media_names.update(
+                asset["coverUrl"].rsplit("/", 1)[-1]
+                for item in backup["content"].get("interests", [])
+                for asset in item.get("media", [])
+                if asset.get("type") == "audio" and isinstance(asset.get("coverUrl"), str) and asset["coverUrl"].startswith("/media/")
+            )
             mascot_image = backup["content"].get("heroMascot", "")
             if isinstance(mascot_image, str) and mascot_image.startswith("/media/"):
                 media_names.add(mascot_image.rsplit("/", 1)[-1])
@@ -863,6 +964,12 @@ class Handler(BaseHTTPRequestHandler):
                     for asset in item["media"]
                     if asset["type"] in ("image", "video", "audio")
                 }
+                referenced.update(
+                    asset["coverUrl"].rsplit("/", 1)[-1]
+                    for item in content["interests"]
+                    for asset in item["media"]
+                    if asset["type"] == "audio" and isinstance(asset.get("coverUrl"), str) and asset["coverUrl"].startswith("/media/")
+                )
                 mascot_image = content.get("heroMascot", "")
                 if isinstance(mascot_image, str) and mascot_image.startswith("/media/"):
                     referenced.add(mascot_image.rsplit("/", 1)[-1])
@@ -1147,7 +1254,9 @@ class Handler(BaseHTTPRequestHandler):
                 db.execute("INSERT INTO settings(key,value) VALUES('page_content',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (json.dumps(content, ensure_ascii=False),))
                 db.commit()
                 retained = {asset["url"].rsplit("/", 1)[-1] for item in content["interests"] for asset in item["media"] if asset["type"] in ("image", "video", "audio")}
+                retained.update(asset["coverUrl"].rsplit("/", 1)[-1] for item in content["interests"] for asset in item["media"] if asset.get("type") == "audio" and isinstance(asset.get("coverUrl"), str) and asset["coverUrl"].startswith("/media/"))
                 previous = {asset["url"].rsplit("/", 1)[-1] for item in old_content.get("interests", []) for asset in item.get("media", []) if asset.get("type") in ("image", "video", "audio") and isinstance(asset.get("url"), str)}
+                previous.update(asset["coverUrl"].rsplit("/", 1)[-1] for item in old_content.get("interests", []) for asset in item.get("media", []) if asset.get("type") == "audio" and isinstance(asset.get("coverUrl"), str) and asset["coverUrl"].startswith("/media/"))
                 if isinstance(content.get("heroMascot"), str) and content["heroMascot"].startswith("/media/"):
                     retained.add(content["heroMascot"].rsplit("/", 1)[-1])
                 if isinstance(old_content.get("heroMascot"), str) and old_content["heroMascot"].startswith("/media/"):
@@ -1190,3 +1299,4 @@ if __name__ == "__main__":
         pass
     print(f"kani的奇妙小世界已启动：http://127.0.0.1:{PORT}")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+

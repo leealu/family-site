@@ -47,3 +47,18 @@
 
 /* Keep the notebook aligned with the page's main interest-card container. */
 .diary-book{width:100%;max-width:none}.interest-media .diary-gallery{width:100%;max-width:560px;margin:22px auto 8px}.gallery-audio,.gallery-netease{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;padding:18px;color:#725b83;text-align:center}.gallery-audio audio{width:min(100%,360px)}.gallery-netease{border-radius:14px;background:linear-gradient(145deg,#fff7fa,#f3efff);text-decoration:none}.gallery-netease>span{font-size:34px}.gallery-netease strong{font-size:14px}.gallery-netease small{color:#a66d86;font-size:11px}.lightbox-audio,.lightbox-netease{display:grid;gap:17px;justify-items:center;max-width:min(80vw,560px);padding:32px;border:1px solid #ffffff38;border-radius:24px;background:#ffffff12;color:white;font-size:20px;text-align:center;text-decoration:none}.lightbox-audio audio{width:min(78vw,460px)}.lightbox-netease small{color:#ffffffbb;font-size:13px}
+
+/* Touch navigation and the compact, cover-first music player. */
+.gallery-frame{touch-action:pan-y}.gallery-open{touch-action:pan-y}
+.gallery-ipod{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:9px;padding:14px 42px;background:linear-gradient(155deg,#fff 0%,#f7f1f5 55%,#eee8f4 100%);color:#594d63;text-align:center}
+.gallery-track-cover{display:grid;place-items:center;width:clamp(92px,34%,170px);aspect-ratio:1;overflow:hidden;border:4px solid #fff;border-radius:13px;background:linear-gradient(145deg,#f8d8e4,#e9dff7 58%,#dceee6);box-shadow:0 6px 18px #47354b2b;color:#fff;font-size:44px}
+.gallery-track-cover img{display:block;width:100%;height:100%;object-fit:cover}
+.gallery-ipod-info{display:grid;justify-items:center;gap:4px;width:min(100%,370px);min-width:0}
+.gallery-ipod-info strong{max-width:100%;overflow:hidden;color:#41374a;font-size:14px;text-overflow:ellipsis;white-space:nowrap}
+.gallery-ipod-info small{max-width:100%;overflow:hidden;color:#8d7d91;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.gallery-ipod-info audio{display:block;width:min(100%,350px);height:38px;margin-top:2px}
+.gallery-ipod-info .provider-play{min-height:36px;margin-top:5px;padding:7px 20px;border:1px solid #d9c9db;border-radius:999px;background:linear-gradient(#fff,#f1eaf3);color:#5c4d68;font-weight:800;box-shadow:0 2px 0 #dfd3e2;cursor:pointer}
+.gallery-ipod-info [role=status]{color:#a36d82;font-size:10px}
+.lightbox-media{touch-action:pan-y;transition:transform .22s ease;cursor:zoom-in}.lightbox-media.is-zoomed{transform:scale(2);cursor:zoom-out}
+@media(max-width:720px){.gallery-ipod{gap:7px;padding:12px 39px}.gallery-track-cover{width:clamp(90px,40%,145px);border-width:3px;border-radius:11px}.gallery-ipod-info strong{font-size:13px}.gallery-ipod-info audio{height:34px}}
+

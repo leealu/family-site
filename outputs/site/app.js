@@ -13,6 +13,13 @@ let sessionExpiryTimer = null;
 let lightboxRecordId = null;
 let lightboxGalleryKind = "diary";
 let lightboxIndex = 0;
+let lightboxZoomed = false;
+let lastLightboxTap = 0;
+let suppressLightboxDblClickUntil = 0;
+let suppressGalleryClickUntil = 0;
+let activeAudio = null;
+let activeAudioButton = null;
+let audioRequestGeneration = 0;
 let diaryEditorOpen = false;
 let activeAdminTab = "content";
 let musicSources = [];
@@ -62,23 +69,29 @@ function renderInterestCards(content=view.content||CONTENT_DEFAULTS){
   $("#interestCards").innerHTML=interests.map((item,index)=>`<article class="card"><div class="picture bg${index%3+1}">${escapeHtml(item.icon)}</div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.description)}</p><span class="chip">${escapeHtml(item.tag)}</span>${item.media?.length?`<div class="interest-media">${renderInterestGallery(item,index)}</div>`:""}</article>`).join("");
   bindGalleryControls($("#interestCards"));
   bindProviderPlay($("#interestCards"));
+  bindProviderCoverFallbacks($("#interestCards"));
 }
+function providerTrackCoverUrl(asset){return asset.track?.coverUrl||`/api/music/cover/${encodeURIComponent(asset.savedItemKey||"")}`;}
+function bindProviderCoverFallbacks(root){root.querySelectorAll("img[data-provider-cover]").forEach((image)=>image.addEventListener("error",()=>{const fallback=document.createElement("span");fallback.setAttribute("aria-hidden","true");fallback.textContent="🎵";image.replaceWith(fallback);},{once:true}));}
 function renderPublicMedia(asset){
   const title=escapeHtml(asset.title||asset.name||"");
   if(asset.type==="image")return `<figure><img src="${escapeHtml(asset.url)}" alt="${title||"兴趣作品"}" loading="lazy">${title?`<figcaption>${title}</figcaption>`:""}</figure>`;
   if(asset.type==="video")return `<figure><video controls playsinline preload="metadata" src="${escapeHtml(asset.url)}"></video>${title?`<figcaption>${title}</figcaption>`:""}</figure>`;
   if(asset.type==="audio")return `<div class="audio-item"><strong>${title||"故事音频"}</strong><audio controls preload="none" src="${escapeHtml(asset.url)}"></audio></div>`;
   if(asset.type==="netease")return `<a class="netease-link" href="${escapeHtml(asset.url)}" target="_blank" rel="noopener noreferrer"><span>🎧</span><span><strong>${title||"网易云故事专辑"}</strong><small>打开网易云音乐播放 ↗</small></span></a>`;
-  if(asset.type==="provider-track")return `<div class="provider-track">${asset.track?.coverUrl?`<img src="${escapeHtml(asset.track.coverUrl)}" alt="" loading="lazy">`:`<span class="provider-track-icon">🎧</span>`}<div class="provider-track-info"><strong>${escapeHtml(asset.track?.title||title||"在线音频")}</strong><small>${escapeHtml([asset.track?.creator,asset.track?.providerName].filter(Boolean).join(" · "))}</small><span class="provider-track-player"><button type="button" class="provider-play" data-play-track="${escapeHtml(asset.savedItemKey)}">▶ 播放</button><span role="status"></span></span></div></div>`;
+  if(asset.type==="provider-track")return `<div class="provider-track"><img data-provider-cover src="${escapeHtml(providerTrackCoverUrl(asset))}" alt="${escapeHtml(asset.track?.title||title||"歌曲")} 封面" loading="lazy"><div class="provider-track-info"><strong>${escapeHtml(asset.track?.title||title||"在线音频")}</strong><small>${escapeHtml([asset.track?.creator,asset.track?.providerName].filter(Boolean).join(" · "))}</small><span class="provider-track-player"><button type="button" class="provider-play" data-play-track="${escapeHtml(asset.savedItemKey)}">▶ 播放</button><span role="status"></span></span></div></div>`;
   return "";
 }
 function bindProviderPlay(root){
   root.querySelectorAll("[data-play-track]").forEach((button)=>button.addEventListener("click",async()=>{
-    const status=button.parentElement.querySelector('[role="status"]');button.disabled=true;status.textContent="正在连接音源…";
-    try{const result=await api(`/api/music/play/${encodeURIComponent(button.dataset.playTrack)}`,{headers:{}});const audio=document.createElement("audio");audio.controls=true;audio.preload="none";audio.src=result.url;button.replaceWith(audio);status.textContent="";audio.play().catch(()=>{status.textContent="请再点一次播放。";});}
+    const status=button.parentElement.querySelector('[role="status"]');
+    if(activeAudioButton===button&&activeAudio){if(activeAudio.paused){activeAudio.play().catch(()=>{status.textContent="请再点一次播放。";});}else activeAudio.pause();return;}
+    stopActiveAudio();const requestGeneration=audioRequestGeneration;button.disabled=true;status.textContent="正在连接音源…";
+    try{const result=await api(`/api/music/play/${encodeURIComponent(button.dataset.playTrack)}`,{headers:{}});if(requestGeneration!==audioRequestGeneration)return;const audio=new Audio();audio.preload="none";audio.src=result.url;activeAudio=audio;activeAudioButton=button;audio.addEventListener("play",()=>{button.textContent="Ⅱ 暂停";button.setAttribute("aria-label","暂停播放");status.textContent="";});audio.addEventListener("pause",()=>{button.textContent="▶ 播放";button.setAttribute("aria-label","播放歌曲");});audio.addEventListener("ended",()=>{button.textContent="▶ 播放";});button.disabled=false;audio.play().catch(()=>{status.textContent="请再点一次播放。";});}
     catch(error){button.disabled=false;status.textContent=error.message;}
   }));
 }
+function stopActiveAudio(){audioRequestGeneration++;if(activeAudio){activeAudio.pause();activeAudio.currentTime=0;}if(activeAudioButton){activeAudioButton.textContent="▶ 播放";activeAudioButton.setAttribute("aria-label","播放歌曲");}activeAudio=null;activeAudioButton=null;}
 async function prepareImageForUpload(file){
   const ext=file.name.split(".").pop().toLowerCase();
   if(ext==="gif"||ext==="webp"||file.type==="image/gif"||file.type==="image/webp")return file;
@@ -95,6 +108,28 @@ async function prepareImageForUpload(file){
   }finally{URL.revokeObjectURL(sourceUrl);}
 }
 function newUploadId(){const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return Array.from(bytes,(value)=>value.toString(16).padStart(2,"0")).join("");}
+async function readEmbeddedMp3Cover(file){
+  if(!/\.mp3$/i.test(file.name)||file.size<10)return null;
+  const header=new Uint8Array(await file.slice(0,10).arrayBuffer());if(String.fromCharCode(...header.slice(0,3))!=="ID3")return null;
+  if(header[3]!==3&&header[3]!==4)return null;
+  const tagSize=(header[6]<<21)|(header[7]<<14)|(header[8]<<7)|header[9];if(tagSize<1||tagSize>8*1024*1024)return null;
+  const bytes=new Uint8Array(await file.slice(10,10+tagSize).arrayBuffer()),version=header[3];let offset=0;
+  while(offset+10<=bytes.length){
+    const id=String.fromCharCode(...bytes.slice(offset,offset+4));if(!/^[A-Z0-9]{4}$/.test(id))break;
+    const size=version===4?((bytes[offset+4]<<21)|(bytes[offset+5]<<14)|(bytes[offset+6]<<7)|bytes[offset+7]):((bytes[offset+4]<<24)|(bytes[offset+5]<<16)|(bytes[offset+6]<<8)|bytes[offset+7]);
+    if(size<1||offset+10+size>bytes.length)break;
+    if(id==="APIC"){
+      const frame=bytes.subarray(offset+10,offset+10+size),encoding=frame[0];let mimeEnd=1;while(mimeEnd<frame.length&&frame[mimeEnd]!==0)mimeEnd++;
+      const mime=String.fromCharCode(...frame.subarray(1,mimeEnd)).toLowerCase();let description=mimeEnd+2,terminator=description;
+      if(encoding===1||encoding===2){while(terminator+1<frame.length&&(frame[terminator]!==0||frame[terminator+1]!==0))terminator+=2;description=terminator+2;}
+      else{while(terminator<frame.length&&frame[terminator]!==0)terminator++;description=terminator+1;}
+      const image=frame.subarray(description),safeMime=["image/jpeg","image/png","image/webp","image/gif"].includes(mime)?mime:"";
+      if(safeMime&&image.length>0&&image.length<=512*1024)return new Blob([image],{type:safeMime});
+    }
+    offset+=10+size;
+  }
+  return null;
+}
 async function uploadMediaFile(sourceFile,onProgress=()=>{}){
   if(sourceFile.size>200*1024*1024)throw new Error(`${sourceFile.name} 超过 200 MiB。`);
   const file=await prepareImageForUpload(sourceFile);if(file.size>200*1024*1024)throw new Error(`${file.name} 超过 200 MiB。`);
@@ -123,16 +158,17 @@ function renderGallerySlide(asset,kind,key,index,title){
   const label=escapeHtml(asset.title||asset.name||title||"成长记录照片");
   if(asset.type==="image")return `<button type="button" class="gallery-open" data-open-gallery="${index}" data-gallery-kind="${kind}" data-gallery-key="${escapeHtml(key)}" aria-label="放大查看${label}"><img src="${escapeHtml(asset.url)}" alt="${label}" loading="lazy"><span>⤢ 点开看大图</span></button>`;
   if(asset.type==="video")return `<div class="gallery-video-wrap"><video controls playsinline preload="metadata" src="${escapeHtml(asset.url)}"></video><button type="button" class="gallery-expand" data-open-gallery="${index}" data-gallery-kind="${kind}" data-gallery-key="${escapeHtml(key)}" aria-label="放大播放${label}">⤢</button></div>`;
-  if(asset.type==="audio")return `<div class="gallery-audio"><strong>🎵 ${label}</strong><audio controls preload="none" src="${escapeHtml(asset.url)}"></audio></div>`;
+  if(asset.type==="audio")return `<div class="gallery-ipod"><div class="gallery-track-cover">${asset.coverUrl?`<img src="${escapeHtml(asset.coverUrl)}" alt="${label} 封面">`:`<span aria-hidden="true">🎵</span>`}</div><div class="gallery-ipod-info"><strong>${label}</strong><small>${escapeHtml(asset.name||"本地音乐")}</small><audio controls preload="none" src="${escapeHtml(asset.url)}"></audio></div></div>`;
   if(asset.type==="netease")return `<a class="gallery-netease" href="${escapeHtml(asset.url)}" target="_blank" rel="noopener noreferrer"><span>🎧</span><strong>${label}</strong><small>打开网易云音乐播放 ↗</small></a>`;
-  if(asset.type==="provider-track")return `<div class="gallery-provider-track"><span>🎧</span><strong>${escapeHtml(asset.track?.title||label)}</strong><small>${escapeHtml([asset.track?.creator,asset.track?.providerName].filter(Boolean).join(" · "))}</small><button type="button" class="provider-play" data-play-track="${escapeHtml(asset.savedItemKey)}">▶ 播放</button><span role="status"></span></div>`;
+  if(asset.type==="provider-track")return `<div class="gallery-ipod"><div class="gallery-track-cover"><img data-provider-cover src="${escapeHtml(providerTrackCoverUrl(asset))}" alt="${escapeHtml(asset.track?.title||label)} 封面" loading="lazy"></div><div class="gallery-ipod-info"><strong>${escapeHtml(asset.track?.title||label)}</strong><small>${escapeHtml([asset.track?.creator,asset.track?.providerName].filter(Boolean).join(" · ")||"在线音乐")}</small><button type="button" class="provider-play" data-play-track="${escapeHtml(asset.savedItemKey)}">▶ 播放</button><span role="status"></span></div></div>`;
   return "";
 }
 function renderPagedGallery(media,kind,key,title){
   if(!media?.length)return "";
   const store=galleryPageStore(kind),page=Math.min(Math.max(0,store.get(key)||0),media.length-1);store.set(key,page);
   const safeKey=escapeHtml(key),safeTitle=escapeHtml(title);
-  return `<section class="diary-gallery ${media.length>1?"is-stack":""}" aria-label="${safeTitle} 相册" data-count="${media.length}"><div class="gallery-frame"><div class="gallery-slide">${renderGallerySlide(media[page],kind,key,page,title)}${media[page].title||media[page].name?`<span class="gallery-caption">${escapeHtml(media[page].title||media[page].name)}</span>`:""}</div>${media.length>1?`<button type="button" class="gallery-nav gallery-prev" data-gallery-step="-1" data-gallery-kind="${kind}" data-gallery-key="${safeKey}" aria-label="上一张" ${page===0?"disabled":""}>‹</button><button type="button" class="gallery-nav gallery-next" data-gallery-step="1" data-gallery-kind="${kind}" data-gallery-key="${safeKey}" aria-label="下一张" ${page>=media.length-1?"disabled":""}>›</button><span class="gallery-counter">${page+1} / ${media.length}</span>`:""}</div>${media.length>1?`<div class="gallery-dots" aria-label="选择照片">${media.map((_,index)=>`<button type="button" data-gallery-to="${index}" data-gallery-kind="${kind}" data-gallery-key="${safeKey}" class="${index===page?"active":""}" aria-label="第 ${index+1} 张"></button>`).join("")}</div>`:""}</section>`;
+  const caption=media[page].type==="image"||media[page].type==="video";
+  return `<section class="diary-gallery ${media.length>1?"is-stack":""}" aria-label="${safeTitle} 相册" data-count="${media.length}"><div class="gallery-frame"><div class="gallery-slide">${renderGallerySlide(media[page],kind,key,page,title)}${caption&&(media[page].title||media[page].name)?`<span class="gallery-caption">${escapeHtml(media[page].title||media[page].name)}</span>`:""}</div>${media.length>1?`<button type="button" class="gallery-nav gallery-prev" data-gallery-step="-1" data-gallery-kind="${kind}" data-gallery-key="${safeKey}" aria-label="上一项" ${page===0?"disabled":""}>‹</button><button type="button" class="gallery-nav gallery-next" data-gallery-step="1" data-gallery-kind="${kind}" data-gallery-key="${safeKey}" aria-label="下一项" ${page>=media.length-1?"disabled":""}>›</button><span class="gallery-counter">${page+1} / ${media.length}</span>`:""}</div>${media.length>1?`<div class="gallery-dots" aria-label="选择内容">${media.map((_,index)=>`<button type="button" data-gallery-to="${index}" data-gallery-kind="${kind}" data-gallery-key="${safeKey}" class="${index===page?"active":""}" aria-label="第 ${index+1} 项"></button>`).join("")}</div>`:""}</section>`;
 }
 function renderDiaryGallery(record){
   return renderPagedGallery(record.media||[],"diary",record.id,record.title);
@@ -152,8 +188,9 @@ function updateDiaryLightbox(){
   if(!dialog||!gallery?.items.length){dialog?.close();return;}
   lightboxIndex=Math.max(0,Math.min(lightboxIndex,gallery.items.length-1));
   const asset=gallery.items[lightboxIndex],stage=$("#lightboxStage"),caption=$("#lightboxCaption"),counter=$("#lightboxCounter");
-  stage.innerHTML=asset.type==="video"?`<video class="lightbox-media" controls autoplay playsinline src="${escapeHtml(asset.url)}"></video>`:asset.type==="audio"?`<div class="lightbox-audio"><strong>🎵 ${escapeHtml(asset.title||asset.name||gallery.title)}</strong><audio controls autoplay src="${escapeHtml(asset.url)}"></audio></div>`:asset.type==="netease"?`<a class="lightbox-netease" href="${escapeHtml(asset.url)}" target="_blank" rel="noopener noreferrer">🎧 ${escapeHtml(asset.title||gallery.title)}<small>打开网易云音乐播放 ↗</small></a>`:`<img class="lightbox-media" src="${escapeHtml(asset.url)}" alt="${escapeHtml(asset.title||asset.name||gallery.title)}">`;
-  caption.textContent=asset.title||asset.name||gallery.title;counter.textContent=`${lightboxIndex+1} / ${gallery.items.length}`;
+  lightboxZoomed=false;lastLightboxTap=0;
+  stage.innerHTML=asset.type==="video"?`<video class="lightbox-media" controls autoplay playsinline src="${escapeHtml(asset.url)}"></video>`:asset.type==="audio"?`<div class="lightbox-audio"><strong>🎵 ${escapeHtml(asset.title||asset.name||gallery.title)}</strong><audio controls src="${escapeHtml(asset.url)}"></audio></div>`:asset.type==="netease"?`<a class="lightbox-netease" href="${escapeHtml(asset.url)}" target="_blank" rel="noopener noreferrer">🎧 ${escapeHtml(asset.title||gallery.title)}<small>打开网易云音乐播放 ↗</small></a>`:`<img class="lightbox-media" src="${escapeHtml(asset.url)}" alt="${escapeHtml(asset.title||asset.name||gallery.title)}">`;
+  caption.textContent=asset.title||asset.name||gallery.title;counter.textContent=`${lightboxIndex+1} / ${gallery.items.length}${asset.type==="image"?" · 双击放大":""}`;
   $("#lightboxPrevious").hidden=gallery.items.length<2;$("#lightboxNext").hidden=gallery.items.length<2;
   $("#lightboxPrevious").disabled=lightboxIndex===0;$("#lightboxNext").disabled=lightboxIndex>=gallery.items.length-1;
 }
@@ -161,10 +198,38 @@ function openDiaryLightbox(kind,key,index){lightboxGalleryKind=kind;lightboxReco
 function bindGalleryControls(root){
   if(!root)return;
   const rerender=(kind)=>kind==="diary"?renderDiaryBook():renderInterestCards();
-  root.querySelectorAll("[data-gallery-step]").forEach((button)=>button.addEventListener("click",()=>{const kind=button.dataset.galleryKind,key=button.dataset.galleryKey,gallery=galleryPayload(kind,key);if(!gallery)return;const store=galleryPageStore(kind);store.set(key,Math.min(Math.max(0,(store.get(key)||0)+Number(button.dataset.galleryStep)),gallery.items.length-1));rerender(kind);}));
-  root.querySelectorAll("[data-gallery-to]").forEach((button)=>button.addEventListener("click",()=>{const kind=button.dataset.galleryKind,key=button.dataset.galleryKey,store=galleryPageStore(kind);store.set(key,Number(button.dataset.galleryTo));rerender(kind);}));
-  root.querySelectorAll("[data-open-gallery]").forEach((button)=>button.addEventListener("click",()=>openDiaryLightbox(button.dataset.galleryKind,button.dataset.galleryKey,Number(button.dataset.openGallery))));
+  const step=(kind,key,direction)=>{const gallery=galleryPayload(kind,key);if(!gallery)return;stopGalleryPlayback();const store=galleryPageStore(kind);store.set(key,Math.min(Math.max(0,(store.get(key)||0)+direction),gallery.items.length-1));rerender(kind);};
+  root.querySelectorAll("[data-gallery-step]").forEach((button)=>button.addEventListener("click",()=>step(button.dataset.galleryKind,button.dataset.galleryKey,Number(button.dataset.galleryStep))));
+  root.querySelectorAll("[data-gallery-to]").forEach((button)=>button.addEventListener("click",()=>{const kind=button.dataset.galleryKind,key=button.dataset.galleryKey,store=galleryPageStore(kind);stopGalleryPlayback();store.set(key,Number(button.dataset.galleryTo));rerender(kind);}));
+  root.querySelectorAll(".gallery-frame").forEach((frame)=>bindHorizontalSwipe(frame,(direction)=>step(frame.closest(".diary-gallery").querySelector("[data-gallery-kind]")?.dataset.galleryKind,frame.closest(".diary-gallery").querySelector("[data-gallery-key]")?.dataset.galleryKey,direction)));
+  root.querySelectorAll("[data-open-gallery]").forEach((button)=>button.addEventListener("click",()=>{if(Date.now()<suppressGalleryClickUntil)return;openDiaryLightbox(button.dataset.galleryKind,button.dataset.galleryKey,Number(button.dataset.openGallery));}));
 }
+function bindHorizontalSwipe(element,onSwipe){
+  if(!element)return;
+  let start=null;
+  element.addEventListener("pointerdown",(event)=>{
+    if(event.pointerType!=="touch"&&event.pointerType!=="pen")return;
+    if(event.target.closest("audio,video,[data-play-track],.gallery-nav,.gallery-dots button"))return;
+    start={x:event.clientX,y:event.clientY};
+  },{passive:true});
+  element.addEventListener("pointerup",(event)=>{
+    if(!start)return;
+    const dx=event.clientX-start.x,dy=event.clientY-start.y;start=null;
+    if(Math.abs(dx)<45||Math.abs(dx)<Math.abs(dy)*1.2){
+      if(element.id==="lightboxStage"&&event.pointerType==="touch"&&event.target.matches(".lightbox-media:not(video)")){
+        const now=Date.now();if(now-lastLightboxTap<350){toggleLightboxZoom();lastLightboxTap=0;suppressLightboxDblClickUntil=now+450;}else lastLightboxTap=now;
+      }
+      return;
+    }
+    suppressGalleryClickUntil=Date.now()+450;stopGalleryPlayback();onSwipe(dx<0?1:-1);
+  },{passive:true});
+  element.addEventListener("pointercancel",()=>{start=null;},{passive:true});
+}
+function toggleLightboxZoom(){
+  const image=$("#lightboxStage .lightbox-media:not(video)");if(!image)return;
+  lightboxZoomed=!lightboxZoomed;image.classList.toggle("is-zoomed",lightboxZoomed);image.setAttribute("aria-label",lightboxZoomed?"已放大，双击还原":"双击放大查看");
+}
+function stopGalleryPlayback(){stopActiveAudio();document.querySelectorAll(".gallery-ipod audio").forEach((audio)=>{audio.pause();audio.currentTime=0;});}
 function diaryMediaEditor(){
   return `<section class="record-media-editor"><strong>照片和视频</strong><label class="upload-label">选择照片或视频<input id="recordMediaInput" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,video/webm,video/quicktime"></label><small>静态照片自动压缩为 WebP；GIF 保留动画；每个文件最多 200 MiB。</small><div id="recordMediaList" class="record-media-list"></div><span id="recordMediaStatus" role="status" class="status"></span></section>`;
 }
@@ -279,8 +344,8 @@ function renderContentEditor(){
   $("#addInterest").addEventListener("click",()=>{const list=$("#interestEditorList");if(list.children.length>=8)return;list.insertAdjacentHTML("beforeend",interestEditorCard({icon:"✨",title:"新兴趣",description:"写一写她喜欢做的事情。",tag:"小小发现",media:[]},list.children.length));bindInterestEditor();});
   bindInterestEditor();
 }
-function interestEditorCard(item,index){const media=Array.isArray(item.media)?item.media:[];return `<div class="editor-card interest-editor-card"><div class="editor-card-heading"><strong>兴趣 ${index+1}</strong><button type="button" class="delete" data-remove-interest>删除卡片</button></div><label>图标<input data-interest-index="${index}" data-interest-key="icon" maxlength="16" value="${escapeHtml(item.icon)}"></label><label>标题<input data-interest-index="${index}" data-interest-key="title" maxlength="80" value="${escapeHtml(item.title)}"></label><label>说明<textarea data-interest-index="${index}" data-interest-key="description" maxlength="240">${escapeHtml(item.description)}</textarea></label><label>小标签<input data-interest-index="${index}" data-interest-key="tag" maxlength="60" value="${escapeHtml(item.tag)}"></label><div class="media-manager"><strong>作品、照片、视频和音频</strong><label class="upload-label">选择并上传文件<input type="file" data-upload-interest multiple accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/aac,audio/ogg,audio/wav"></label><span class="upload-status" data-upload-status></span><div class="music-search"><input data-music-query placeholder="搜索歌曲或故事名称"><select data-music-kind aria-label="内容类型"><option value="song">歌曲</option><option value="album">故事专辑</option></select><button type="button" data-search-music>搜索在线内容</button></div><div class="music-search-results" data-music-results></div><div class="media-editor-list">${media.map(mediaEditorRow).join("")}</div><div class="netease-add"><input data-netease-title placeholder="故事专辑名称"><input data-netease-url placeholder="网易云分享链接（music.163.com）"><button type="button" data-add-netease>添加网易云外链</button></div><small>静态照片自动转 WebP；网易云外链仍会跳转到官方页面。在线搜索播放需先在“音乐音源”配置兼容 API。</small></div></div>`;}
-function mediaEditorRow(asset){const track=asset.type==="provider-track"?JSON.stringify(asset.track||{}):"";return `<div class="media-editor-row" data-media-type="${escapeHtml(asset.type)}" data-media-url="${escapeHtml(asset.url||"")}" data-media-name="${escapeHtml(asset.name||"")}" data-saved-item-key="${escapeHtml(asset.savedItemKey||"")}" data-track="${escapeHtml(track)}"><span class="media-type-icon">${asset.type==="image"?"🖼️":asset.type==="video"?"🎬":asset.type==="audio"?"🎵":"🎧"}</span><input data-media-title maxlength="120" aria-label="作品名称" value="${escapeHtml(asset.title||asset.name||asset.track?.title||"")}"><button type="button" class="delete" data-remove-media aria-label="移除此内容">移除</button></div>`;}
+function interestEditorCard(item,index){const media=Array.isArray(item.media)?item.media:[];return `<div class="editor-card interest-editor-card"><div class="editor-card-heading"><strong>兴趣 ${index+1}</strong><button type="button" class="delete" data-remove-interest>删除卡片</button></div><label>图标<input data-interest-index="${index}" data-interest-key="icon" maxlength="16" value="${escapeHtml(item.icon)}"></label><label>标题<input data-interest-index="${index}" data-interest-key="title" maxlength="80" value="${escapeHtml(item.title)}"></label><label>说明<textarea data-interest-index="${index}" data-interest-key="description" maxlength="240">${escapeHtml(item.description)}</textarea></label><label>小标签<input data-interest-index="${index}" data-interest-key="tag" maxlength="60" value="${escapeHtml(item.tag)}"></label><div class="media-manager"><strong>作品、照片、视频和音频</strong><label class="upload-label">选择并上传文件<input type="file" data-upload-interest multiple accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/aac,audio/ogg,audio/wav"></label><span class="upload-status" data-upload-status></span><div class="music-search"><input data-music-query placeholder="搜索歌曲或故事名称"><select data-music-kind aria-label="内容类型"><option value="song">歌曲</option><option value="album">故事专辑</option></select><button type="button" data-search-music>搜索在线内容</button></div><div class="music-search-results" data-music-results></div><div class="media-editor-list">${media.map(mediaEditorRow).join("")}</div><div class="netease-add"><input data-netease-title placeholder="故事专辑名称"><input data-netease-url placeholder="网易云分享链接（music.163.com）"><button type="button" data-add-netease>添加网易云外链</button></div><small>静态照片自动转 WebP；歌曲采用 iPod 风格播放器，可滑动或点箭头选曲，播放和暂停使用按钮。在线歌曲读取音源封面；MP3 会读取内嵌封面（如有）。</small></div></div>`;}
+function mediaEditorRow(asset){const track=asset.type==="provider-track"?JSON.stringify(asset.track||{}):"";return `<div class="media-editor-row" data-media-type="${escapeHtml(asset.type)}" data-media-url="${escapeHtml(asset.url||"")}" data-media-name="${escapeHtml(asset.name||"")}" data-cover-url="${escapeHtml(asset.coverUrl||"")}" data-saved-item-key="${escapeHtml(asset.savedItemKey||"")}" data-track="${escapeHtml(track)}"><span class="media-type-icon">${asset.type==="image"?"🖼️":asset.type==="video"?"🎬":asset.type==="audio"?"🎵":"🎧"}</span><input data-media-title maxlength="120" aria-label="作品名称" value="${escapeHtml(asset.title||asset.name||asset.track?.title||"")}"><button type="button" class="delete" data-remove-media aria-label="移除此内容">移除</button></div>`;}
 function bindInterestEditor(){
   const list=$("#interestEditorList");
   list.querySelectorAll("[data-remove-interest]").forEach((button)=>button.onclick=()=>{if(list.children.length<=1)return;button.closest(".interest-editor-card").remove();renumberInterestEditor();});
@@ -303,8 +368,11 @@ function addProviderTrack(button){
   button.closest(".interest-editor-card").querySelector(".media-editor-list").insertAdjacentHTML("beforeend",mediaEditorRow(asset));button.closest(".music-result").remove();bindInterestEditor();
 }
 async function uploadInterestFiles(input){
-  const card=input.closest(".interest-editor-card"),status=card.querySelector("[data-upload-status]"),files=Array.from(input.files||[]);input.disabled=true;
-  try{for(const file of files){const data=await uploadMediaFile(file,(message)=>{status.textContent=`${file.name}：${message}`;});card.querySelector(".media-editor-list").insertAdjacentHTML("beforeend",mediaEditorRow(data));}status.textContent=files.length?`已上传 ${files.length} 个文件，保存首页内容后生效。`:"";bindInterestEditor();}
+  const card=input.closest(".interest-editor-card"),status=card.querySelector("[data-upload-status]"),files=Array.from(input.files||[]);let coverWarning=false;input.disabled=true;
+  try{for(const file of files){const data=await uploadMediaFile(file,(message)=>{status.textContent=`${file.name}：${message}`;});if(data.type==="audio"){
+      const cover=await readEmbeddedMp3Cover(file);
+      if(cover){const extension=cover.type.split("/")[1].replace("jpeg","jpg"),coverFile=new File([cover],`歌曲封面.${extension}`,{type:cover.type});try{const coverData=await uploadMediaFile(coverFile);data.coverUrl=coverData.url;}catch{coverWarning=true;}}
+    }card.querySelector(".media-editor-list").insertAdjacentHTML("beforeend",mediaEditorRow(data));}status.textContent=coverWarning?"歌曲已上传，但有封面上传失败；歌曲仍可播放。":files.length?`已上传 ${files.length} 个文件，保存首页内容后生效。`:"";bindInterestEditor();}
   catch(error){status.textContent=error.message;}
   finally{input.disabled=false;input.value="";}
 }
@@ -326,7 +394,7 @@ function renumberInterestEditor(){
 function collectContent(){
   const c={};for(const field of $("#contentEditor").querySelectorAll("[data-content-key]"))c[field.dataset.contentKey]=field.value.trim();
   c.profile=Array.from({length:3},(_,index)=>{const row={};$("#contentEditor").querySelectorAll(`[data-profile-index="${index}"]`).forEach((field)=>row[field.dataset.profileKey]=field.value.trim());return row;});
-  c.interests=Array.from($("#interestEditorList").querySelectorAll(".interest-editor-card"),(card)=>{const item={};card.querySelectorAll("[data-interest-key]").forEach((field)=>item[field.dataset.interestKey]=field.value.trim());item.media=Array.from(card.querySelectorAll(".media-editor-row"),(row)=>{const asset={type:row.dataset.mediaType,title:row.querySelector("[data-media-title]").value.trim(),name:row.dataset.mediaName,url:row.dataset.mediaUrl};if(asset.type==="provider-track"){asset.savedItemKey=row.dataset.savedItemKey;asset.track=JSON.parse(row.dataset.track||"{}");delete asset.url;}return asset;});return item;});
+  c.interests=Array.from($("#interestEditorList").querySelectorAll(".interest-editor-card"),(card)=>{const item={};card.querySelectorAll("[data-interest-key]").forEach((field)=>item[field.dataset.interestKey]=field.value.trim());item.media=Array.from(card.querySelectorAll(".media-editor-row"),(row)=>{const asset={type:row.dataset.mediaType,title:row.querySelector("[data-media-title]").value.trim(),name:row.dataset.mediaName,url:row.dataset.mediaUrl};if(asset.type==="audio"&&row.dataset.coverUrl)asset.coverUrl=row.dataset.coverUrl;if(asset.type==="provider-track"){asset.savedItemKey=row.dataset.savedItemKey;asset.track=JSON.parse(row.dataset.track||"{}");delete asset.url;}return asset;});return item;});
   return c;
 }
 function musicSourceRow(source={}){return `<div class="music-source-row" data-source-id="${escapeHtml(source.id||newUploadId())}"><label>显示名称<input data-source-name maxlength="80" value="${escapeHtml(source.name||"")}" placeholder="例如：家庭音乐 API"></label><label>API 地址<input data-source-url type="url" value="${escapeHtml(source.baseUrl||"")}" placeholder="http://meting-api/api"></label><label>平台代码<input data-source-platform maxlength="40" value="${escapeHtml(source.platform||"netease")}" placeholder="netease / tencent / kugou"></label><label>鉴权方式<select data-source-auth><option value="token" ${(source.authMode||"token")==="token"?"selected":""}>普通 token</option><option value="meting-hmac" ${source.authMode==="meting-hmac"?"selected":""}>Meting-API HMAC-SHA1</option></select></label><label>服务密钥<input data-source-key type="password" autocomplete="new-password" placeholder="${source.hasKey?"已保存；留空保持不变":"填写服务密钥"}"></label><label class="source-enabled"><input data-source-enabled type="checkbox" ${source.enabled===false?"":"checked"}>启用</label><button type="button" class="delete" data-remove-source>删除音源</button><button type="button" class="backup-button" data-test-source>测试连接</button><span class="source-test-status" role="status"></span></div>`;}
@@ -370,16 +438,19 @@ $("#restoreBackupInput").addEventListener("change",async(event)=>{
 });
 $("#chooseRestoreBackup").addEventListener("click",()=>$("#restoreBackupInput").click());
 $("#lightboxClose").addEventListener("click",()=>$("#diaryLightbox").close());
-$("#lightboxPrevious").addEventListener("click",()=>{lightboxIndex--;updateDiaryLightbox();});
-$("#lightboxNext").addEventListener("click",()=>{lightboxIndex++;updateDiaryLightbox();});
+$("#lightboxPrevious").addEventListener("click",()=>{stopGalleryPlayback();lightboxIndex--;updateDiaryLightbox();});
+$("#lightboxNext").addEventListener("click",()=>{stopGalleryPlayback();lightboxIndex++;updateDiaryLightbox();});
 $("#diaryLightbox").addEventListener("click",(event)=>{if(event.target===event.currentTarget)event.currentTarget.close();});
-$("#diaryLightbox").addEventListener("close",()=>{$("#lightboxStage").replaceChildren();lightboxRecordId=null;});
+$("#lightboxStage").addEventListener("dblclick",(event)=>{if(event.target.matches(".lightbox-media:not(video)")){event.preventDefault();if(Date.now()>=suppressLightboxDblClickUntil)toggleLightboxZoom();}});
+bindHorizontalSwipe($("#lightboxStage"),(direction)=>{if(direction<0&&$("#lightboxPrevious").disabled)return;if(direction>0&&$("#lightboxNext").disabled)return;lightboxIndex+=direction;updateDiaryLightbox();});
+$("#diaryLightbox").addEventListener("close",()=>{$("#lightboxStage").replaceChildren();lightboxRecordId=null;lightboxZoomed=false;lastLightboxTap=0;});
 window.addEventListener("keydown",(event)=>{
   const dialog=$("#diaryLightbox");if(!dialog.open)return;
-  if(event.key==="ArrowLeft"&&!$("#lightboxPrevious").disabled){event.preventDefault();lightboxIndex--;updateDiaryLightbox();}
-  if(event.key==="ArrowRight"&&!$("#lightboxNext").disabled){event.preventDefault();lightboxIndex++;updateDiaryLightbox();}
+  if(event.key==="ArrowLeft"&&!$("#lightboxPrevious").disabled){event.preventDefault();stopGalleryPlayback();lightboxIndex--;updateDiaryLightbox();}
+  if(event.key==="ArrowRight"&&!$("#lightboxNext").disabled){event.preventDefault();stopGalleryPlayback();lightboxIndex++;updateDiaryLightbox();}
 });
 const backToTop=$("#backToTop");
 window.addEventListener("scroll",()=>backToTop.classList.toggle("visible",window.scrollY>420),{passive:true});
 backToTop.addEventListener("click",()=>window.scrollTo({top:0,behavior:"smooth"}));
 loadState();
+
