@@ -644,11 +644,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, {"setupRequired": setup_required, "authenticated": bool(token), "sessionExpiresAt":session_row["expires_at"] if session_row else None, "records": visible_records, "content": content})
         media_match = re.fullmatch(r"/media/([a-f0-9]{32}\.[a-z0-9]{2,5})", path)
         if media_match:
+            filename = media_match.group(1)
             with connect() as db:
-                filename = media_match.group(1)
-                if not public_media_referenced(db, filename) and not self.session(db):
+                is_public = public_media_referenced(db, filename)
+                if not is_public and not self.session(db):
                     return self.send_json(404, {"error":"找不到这个作品。"})
-            return self.send_media(MEDIA_DIR / media_match.group(1))
+            return self.send_media(MEDIA_DIR / filename, is_public=is_public)
         if path == "/" or path == "/index.html":
             return self.send_file(ROOT / "index.html", "text/html; charset=utf-8")
         if path == "/app.js":
@@ -676,7 +677,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_media(self, path):
+    def send_media(self, path, is_public=False):
         try:
             size = path.stat().st_size
             suffix = path.suffix.lower()
@@ -717,7 +718,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(length))
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Cache-Control", "private, no-store")
+        # Only published images may enter browser and shared CDN caches.
+        cache_control = "public, max-age=300, s-maxage=300" if is_public and kind == "image" else "private, no-store"
+        self.send_header("Cache-Control", cache_control)
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.end_headers()
