@@ -9,7 +9,7 @@ const {chromium} = require('playwright');
 (async () => {
   const data = mkdtempSync(path.join(tmpdir(), 'family-image-test-'));
   const port = 18746;
-  const server = spawn(process.env.PYTHON || 'python', ['outputs/site/server.py'], {
+  const server = spawn(process.env.PYTHON || 'python', ['outputs/family-site/server.py'], {
     cwd: path.resolve(__dirname, '..'),
     env: {...process.env, DIARY_DATA_DIR:data, PORT:String(port)}, stdio:'ignore'
   });
@@ -75,3 +75,4 @@ const {chromium} = require('playwright');
     rmSync(data,{recursive:true,force:true});
   }
 })().catch(error=>{console.error(error);process.exitCode=1;});
+

@@ -17,13 +17,13 @@
 
 ## 部署
 
-`outputs/site/` 是唯一的最新源码目录。生成可部署目录和 ZIP 时，在仓库根目录运行：
+`outputs/family-site/` 是唯一目录，始终保存最新源码和部署文件。生成 ZIP 时，在仓库根目录运行：
 
 ```powershell
 python scripts/package_site.py
 ```
 
-默认生成 `outputs/family-site/` 和 `outputs/family-site.zip`。每次运行都会从 `outputs/site/` 全量重建，新增和修改的文件会更新，源码中已删除的旧文件也会从部署副本清除。需要带版本号的产物时，可指定名称，例如：
+默认生成 `outputs/family-site.zip`，内容直接来自 `outputs/family-site/`；不会再生成第二份部署文件夹。每次运行都重新读取该目录中的全部最新文件。需要带版本号的 ZIP 时，可指定名称，例如：
 
 ```powershell
 python scripts/package_site.py --name family-site-v2026.10.15.5
@@ -56,7 +56,7 @@ docker compose down        # 停止服务，保留家庭数据
 docker compose up -d --build  # 更新源码后重新构建并启动
 ```
 
-服务器数据库、上传媒体和备份保存在 `/opt/family-site/data/`。升级时用新包覆盖程序文件，并保留服务器已有的 `data/` 和 `.env`；重建容器时数据也会保留。请定期备份，也不要执行会删除数据卷的清理命令。公网访问前请配置 HTTPS 反向代理，并在 `/opt/family-site/.env` 中将 `COOKIE_SECURE` 设为 `1`。完整安装、迁移、备份和安全说明见 [`outputs/site/README.md`](outputs/site/README.md)。
+服务器数据库、上传媒体和备份保存在 `/opt/family-site/data/`。升级时用新包覆盖程序文件，并保留服务器已有的 `data/` 和 `.env`；重建容器时数据也会保留。请定期备份，也不要执行会删除数据卷的清理命令。公网访问前请配置 HTTPS 反向代理，并在 `/opt/family-site/.env` 中将 `COOKIE_SECURE` 设为 `1`。完整安装、迁移、备份和安全说明见 [`outputs/family-site/README.md`](outputs/family-site/README.md)。
 
 ## 在线音乐音源
 
@@ -78,18 +78,18 @@ docker compose up -d --build  # 更新源码后重新构建并启动
 需要 Python 3.10 或更新版本：
 
 ```powershell
-python outputs/site/server.py
+python outputs/family-site/server.py
 ```
 
-然后访问 `http://127.0.0.1:8000`。本地运行会在 `outputs/site/data/` 保存数据库和媒体文件。
+然后访问 `http://127.0.0.1:8000`。本地运行会在 `outputs/family-site/data/` 保存数据库和媒体文件。
 
 ## 仓库目录
 
-- `outputs/site/`：唯一的最新网站源码、Docker 配置和安装脚本。
+- `outputs/family-site/`：唯一的最新网站源码、Docker 配置和安装脚本。
 - `docs/superpowers/specs/`、`docs/superpowers/plans/`：功能设计与实施计划。
-- `outputs/family-site/`、`outputs/family-site.zip`：由打包脚本从最新源码全量生成的部署副本，不纳入 Git。
+- `outputs/family-site.zip`：由打包脚本从 `outputs/family-site/` 生成的部署包，不纳入 Git。
 
-家庭数据库、上传媒体、密钥和服务器备份不应提交到公开仓库。部署目录和数据迁移细节见 [`outputs/site/README.md`](outputs/site/README.md)。
+家庭数据库、上传媒体、密钥和服务器备份不应提交到公开仓库。部署目录和数据迁移细节见 [`outputs/family-site/README.md`](outputs/family-site/README.md)。
 
 ## 后续规划
 

@@ -9,7 +9,7 @@ import unittest
 from urllib.parse import parse_qs, urlparse
 
 
-SERVER_PATH = Path(__file__).resolve().parents[1] / "outputs" / "site" / "server.py"
+SERVER_PATH = Path(__file__).resolve().parents[1] / "outputs" / "family-site" / "server.py"
 SPEC = importlib.util.spec_from_file_location("family_site_server", SERVER_PATH)
 site_server = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(site_server)

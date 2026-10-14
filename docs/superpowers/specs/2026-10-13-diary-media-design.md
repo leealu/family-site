@@ -39,11 +39,11 @@
 
 ## 实现涉及文件
 
-- `outputs/site/server.py`：迁移、公开读取、记录媒体校验、删除清理、备份/恢复。
-- `outputs/site/app.js`：表单上传/编辑、访客渲染、每页媒体展示。
-- `outputs/site/style.css`：手帐页内媒体画廊与移动端布局。
-- `outputs/site/index.html`：静态资源版本号。
-- `outputs/site/README.md`：更新公开范围和记录附件说明。
+- `outputs/family-site/server.py`：迁移、公开读取、记录媒体校验、删除清理、备份/恢复。
+- `outputs/family-site/app.js`：表单上传/编辑、访客渲染、每页媒体展示。
+- `outputs/family-site/style.css`：手帐页内媒体画廊与移动端布局。
+- `outputs/family-site/index.html`：静态资源版本号。
+- `outputs/family-site/README.md`：更新公开范围和记录附件说明。
 - `outputs/family-site/` 与 `outputs/family-site.zip`：同步可部署的最新包。
 
 ## 2026-10-14 已确认的调整
@@ -54,3 +54,4 @@
 - 静态照片在浏览器端缩放到最长边 1920 像素并编码为 WebP（质量约 0.82）；保留动画 GIF，视频不转码。iPhone/Safari 支持的 HEIC/HEIF 照片也走本地 WebP 编码。
 - 经 Cloudflare 的大媒体分块上传，单块约 8 MiB，文件总上限继续为 200 MiB；分块暂存于 data 目录，成功合并后移除暂存，下次分块上传时清理超过 24 小时的不完整暂存。
 - MOV 上传当前源代码已接受 `.mov`/`video/quicktime`。Cloudflare 不同套餐的代理请求体默认上限可能低于应用 200 MiB 上限，因此分块解决单请求体限制；若实际文件仍失败，具体大小与状态码是后续判断连接超时/源站限制的依据。
+

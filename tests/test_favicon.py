@@ -8,7 +8,7 @@ from urllib.request import urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVER_PATH = ROOT / "outputs" / "site" / "server.py"
+SERVER_PATH = ROOT / "outputs" / "family-site" / "server.py"
 SPEC = importlib.util.spec_from_file_location("family_site_server_for_favicon", SERVER_PATH)
 site_server = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(site_server)
@@ -29,7 +29,7 @@ class FaviconTests(unittest.TestCase):
         cls.thread.join(timeout=2)
 
     def test_homepage_declares_a_versioned_flower_favicon(self):
-        html = (ROOT / "outputs" / "site" / "index.html").read_text(encoding="utf-8")
+        html = (ROOT / "outputs" / "family-site" / "index.html").read_text(encoding="utf-8")
         self.assertRegex(html, r'<link[^>]+rel="icon"[^>]+href="/favicon\.svg\?v=[^"]+"')
 
     def test_favicon_route_serves_the_svg_file(self):

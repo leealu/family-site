@@ -127,11 +127,11 @@ LX Music 桌面版的开放 API 主要用于控制本机正在运行的播放器
 
 ## 实现文件预期
 
-- `outputs/site/server.py`：音源配置存储、适配器、家长权限、搜索与播放解析接口。
-- `outputs/site/app.js`：音源设置、兴趣编辑器搜索/添加、访客播放器和失败提示。
-- `outputs/site/style.css`、`outputs/site/admin.css`：搜索结果、播放器和移动端布局。
-- `outputs/site/index.html`：静态资源版本号。
-- `outputs/site/README.md`：配置、网络可达性、接口要求与权限边界。
+- `outputs/family-site/server.py`：音源配置存储、适配器、家长权限、搜索与播放解析接口。
+- `outputs/family-site/app.js`：音源设置、兴趣编辑器搜索/添加、访客播放器和失败提示。
+- `outputs/family-site/style.css`、`outputs/family-site/admin.css`：搜索结果、播放器和移动端布局。
+- `outputs/family-site/index.html`：静态资源版本号。
+- `outputs/family-site/README.md`：配置、网络可达性、接口要求与权限边界。
 - `outputs/family-site/` 和 `outputs/family-site.zip`：同步部署包，不覆盖或删除服务器数据目录。
 
 ## 需要用户审阅确认的实施选择
@@ -143,3 +143,4 @@ LX Music 桌面版的开放 API 主要用于控制本机正在运行的播放器
 - [LX Music 官方仓库说明](https://github.com/lyswhut/lx-music-desktop/blob/master/README.md)：开放 API 在本机启动；播放数据由所选自定义源返回在线链接。
 - [LX Music 官方开放 API 文档](https://github.com/lyswhut/lx-music-doc/blob/master/docs/desktop/open-api.md)：列出本地播放器状态、歌词和控制接口。
 - [Meting-API 项目文档](https://github.com/metowolf/Meting-API/blob/master/README.md)：多平台 API 参数、响应和认证配置参考；接口可用性及来源权限仍由实际服务与上游平台决定。
+

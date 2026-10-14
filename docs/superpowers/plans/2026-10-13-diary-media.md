@@ -33,7 +33,7 @@
 ### 任务 1：扩展记录存储、公开读取和媒体生命周期
 
 **文件：**
-- 修改：`outputs/site/server.py`
+- 修改：`outputs/family-site/server.py`
 
 **接口：**
 - 输入：现有日记字段 `date/title/story/age_label` 和新增 `media: list[dict]`。
@@ -51,8 +51,8 @@
 ### 任务 2：访客日记与图文/视频手帐页
 
 **文件：**
-- 修改：`outputs/site/app.js`
-- 修改：`outputs/site/style.css`
+- 修改：`outputs/family-site/app.js`
+- 修改：`outputs/family-site/style.css`
 
 **接口：** 使用任务 1 的 `view.records[]` 与 `record.media[]`；继续使用 `renderDiaryBook()` 和日期/年龄排序状态。
 
@@ -65,8 +65,8 @@
 ### 任务 3：家长记录表单中的附件管理
 
 **文件：**
-- 修改：`outputs/site/app.js`
-- 修改：`outputs/site/style.css`
+- 修改：`outputs/family-site/app.js`
+- 修改：`outputs/family-site/style.css`
 
 **接口：** 登录家长通过 `POST /api/media` 上传文件，再通过现有记录 POST/PUT 请求保存 `media` 数组；附件单项删除通过记录更新表达。
 
@@ -79,14 +79,14 @@
 ### 任务 4：文档、资源版本与 Docker 发布包
 
 **文件：**
-- 修改：`outputs/site/index.html`
-- 修改：`outputs/site/README.md`
+- 修改：`outputs/family-site/index.html`
+- 修改：`outputs/family-site/README.md`
 - 同步：`outputs/family-site/` 中的部署源文件
 - 重建：`outputs/family-site.zip`
 
 - [x] 更新静态资源缓存版本，避免部署后仍加载旧 JavaScript/CSS。
 - [x] 更新 README，说明日记对游客公开、家长管理、附件大小/格式、备份恢复和删除行为。
-- [x] 将 `outputs/site/` 的部署文件同步到 `outputs/family-site/`，不复制本地 `data/`。
+- [x] 将 `outputs/family-site/` 作为唯一最新源码和部署文件目录；打包时不复制本地 `data/`。
 - [x] 重建 zip 并核对至少包含 `server.py`、`app.js`、`style.css`、`index.html`、README、Docker/Compose 文件和安装脚本。
 - [x] 最终代码审阅与部署包文件清单核对；不运行测试或直接操作远程服务器。
 
@@ -106,3 +106,4 @@
 - [x] 通过 Cloudflare 的大文件分 8 MiB 块上传，处理 MOV 等大文件；总文件上限继续 200 MiB；上传时清理超过 24 小时的暂存目录。
 - [x] 更新 cache-busting 版本、说明文档、部署目录和 ZIP；不操作远程服务器。
 - [x] 完成静态审阅并核对部署包；按会话约束不运行自动化测试。
+

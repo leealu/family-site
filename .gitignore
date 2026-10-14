@@ -16,8 +16,7 @@
 Thumbs.db
 desktop.ini
 
-# Generated deployment copies and previews; canonical source is outputs/site/
-/outputs/family-site/
+# Deployment archives and previews are generated locally from outputs/family-site/.
 /outputs/family-site.zip
 /outputs/family-site-*.zip
 /outputs/family-site-v*/
@@ -30,3 +29,4 @@ desktop.ini
 
 # Personalized child avatar stays local and out of the public repository
 /outputs/kani-cartoon-avatar.png
+

@@ -12,13 +12,12 @@ SPEC.loader.exec_module(package_site)
 
 
 class PackageSiteTests(unittest.TestCase):
-    def test_package_is_a_full_fresh_copy_of_deployable_source(self):
+    def test_zip_is_built_from_the_canonical_family_site_folder_without_changing_it(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            source = root / "site"
+            source = root / "outputs" / "family-site"
             outputs = root / "outputs"
-            source.mkdir()
-            outputs.mkdir()
+            source.mkdir(parents=True)
             (source / "server.py").write_text("latest server", encoding="utf-8")
             (source / "favicon.svg").write_text("flower", encoding="utf-8")
             (source / "data").mkdir()
@@ -26,16 +25,12 @@ class PackageSiteTests(unittest.TestCase):
             (source / ".env").write_text("SECRET=value", encoding="utf-8")
             (source / "__pycache__").mkdir()
             (source / "__pycache__" / "server.pyc").write_bytes(b"cache")
-            existing = outputs / "family-site"
-            existing.mkdir()
-            (existing / "removed-from-source.txt").write_text("stale", encoding="utf-8")
 
             folder, archive = package_site.build_deployment_package(source, outputs)
 
-            self.assertEqual((folder / "server.py").read_text(encoding="utf-8"), "latest server")
-            self.assertEqual((folder / "favicon.svg").read_text(encoding="utf-8"), "flower")
-            self.assertFalse((folder / "removed-from-source.txt").exists())
-            packaged_files = {path.relative_to(folder).as_posix() for path in folder.rglob("*") if path.is_file()}
+            self.assertEqual(folder, source)
+            self.assertEqual((source / "data" / "family.sqlite3").read_text(encoding="utf-8"), "private")
+            packaged_files = {path.relative_to(source).as_posix() for path in source.rglob("*") if path.is_file() and not package_site._is_excluded(path.relative_to(source))}
             self.assertEqual(packaged_files, {"server.py", "favicon.svg"})
             with zipfile.ZipFile(archive) as bundle:
                 self.assertEqual(set(bundle.namelist()), packaged_files)
