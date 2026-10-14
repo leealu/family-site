@@ -15,6 +15,7 @@ let lightboxGalleryKind = "diary";
 let lightboxIndex = 0;
 let diaryEditorOpen = false;
 let activeAdminTab = "content";
+let musicSources = [];
 
 const CONTENT_DEFAULTS = {
   siteName:"kani的奇妙小世界",logoEmoji:"🌼",navDiary:"成长日记",navLikes:"兴趣角",heroBadge:"🎈 3 岁半的小小探险家",heroLine1:"你好呀！",heroLine2:"欢迎来到",heroLine3:"我的小世界",heroEmoji:"☀️",heroMascot:"🐻",heroDescription:"这里有我喜欢的东西、每天的新发现，还有一点点长大的故事。牵好大人的手，一起来逛逛吧！",heroButton:"翻开成长日记",float1:"🌷 你好朋友！",float2:"✨ 今天也有新发现",float3:"🧸 抱抱时间",
@@ -58,6 +59,7 @@ function renderInterestCards(content=view.content||CONTENT_DEFAULTS){
   const interests=Array.isArray(content.interests)?content.interests:CONTENT_DEFAULTS.interests;
   $("#interestCards").innerHTML=interests.map((item,index)=>`<article class="card"><div class="picture bg${index%3+1}">${escapeHtml(item.icon)}</div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.description)}</p><span class="chip">${escapeHtml(item.tag)}</span>${item.media?.length?`<div class="interest-media">${renderInterestGallery(item,index)}</div>`:""}</article>`).join("");
   bindGalleryControls($("#interestCards"));
+  bindProviderPlay($("#interestCards"));
 }
 function renderPublicMedia(asset){
   const title=escapeHtml(asset.title||asset.name||"");
@@ -65,7 +67,15 @@ function renderPublicMedia(asset){
   if(asset.type==="video")return `<figure><video controls playsinline preload="metadata" src="${escapeHtml(asset.url)}"></video>${title?`<figcaption>${title}</figcaption>`:""}</figure>`;
   if(asset.type==="audio")return `<div class="audio-item"><strong>${title||"故事音频"}</strong><audio controls preload="none" src="${escapeHtml(asset.url)}"></audio></div>`;
   if(asset.type==="netease")return `<a class="netease-link" href="${escapeHtml(asset.url)}" target="_blank" rel="noopener noreferrer"><span>🎧</span><span><strong>${title||"网易云故事专辑"}</strong><small>打开网易云音乐播放 ↗</small></span></a>`;
+  if(asset.type==="provider-track")return `<div class="provider-track">${asset.track?.coverUrl?`<img src="${escapeHtml(asset.track.coverUrl)}" alt="" loading="lazy">`:`<span class="provider-track-icon">🎧</span>`}<div class="provider-track-info"><strong>${escapeHtml(asset.track?.title||title||"在线音频")}</strong><small>${escapeHtml([asset.track?.creator,asset.track?.providerName].filter(Boolean).join(" · "))}</small><span class="provider-track-player"><button type="button" class="provider-play" data-play-track="${escapeHtml(asset.savedItemKey)}">▶ 播放</button><span role="status"></span></span></div></div>`;
   return "";
+}
+function bindProviderPlay(root){
+  root.querySelectorAll("[data-play-track]").forEach((button)=>button.addEventListener("click",async()=>{
+    const status=button.parentElement.querySelector('[role="status"]');button.disabled=true;status.textContent="正在连接音源…";
+    try{const result=await api(`/api/music/play/${encodeURIComponent(button.dataset.playTrack)}`,{headers:{}});const audio=document.createElement("audio");audio.controls=true;audio.preload="none";audio.src=result.url;button.replaceWith(audio);status.textContent="";audio.play().catch(()=>{status.textContent="请再点一次播放。";});}
+    catch(error){button.disabled=false;status.textContent=error.message;}
+  }));
 }
 async function prepareImageForUpload(file){
   const ext=file.name.split(".").pop().toLowerCase();
@@ -113,6 +123,7 @@ function renderGallerySlide(asset,kind,key,index,title){
   if(asset.type==="video")return `<div class="gallery-video-wrap"><video controls playsinline preload="metadata" src="${escapeHtml(asset.url)}"></video><button type="button" class="gallery-expand" data-open-gallery="${index}" data-gallery-kind="${kind}" data-gallery-key="${escapeHtml(key)}" aria-label="放大播放${label}">⤢</button></div>`;
   if(asset.type==="audio")return `<div class="gallery-audio"><strong>🎵 ${label}</strong><audio controls preload="none" src="${escapeHtml(asset.url)}"></audio></div>`;
   if(asset.type==="netease")return `<a class="gallery-netease" href="${escapeHtml(asset.url)}" target="_blank" rel="noopener noreferrer"><span>🎧</span><strong>${label}</strong><small>打开网易云音乐播放 ↗</small></a>`;
+  if(asset.type==="provider-track")return `<div class="gallery-provider-track"><span>🎧</span><strong>${escapeHtml(asset.track?.title||label)}</strong><small>${escapeHtml([asset.track?.creator,asset.track?.providerName].filter(Boolean).join(" · "))}</small><button type="button" class="provider-play" data-play-track="${escapeHtml(asset.savedItemKey)}">▶ 播放</button><span role="status"></span></div>`;
   return "";
 }
 function renderPagedGallery(media,kind,key,title){
@@ -216,6 +227,7 @@ function setAdminTab(tab){
   activeAdminTab=tab;
   $("#adminContentPanel").hidden=tab!=="content";
   $("#adminDiaryPanel").hidden=tab!=="diary";
+  $("#adminMusicPanel").hidden=tab!=="music";
   document.querySelectorAll("[data-admin-tab]").forEach((button)=>{const active=button.dataset.adminTab===tab;button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active));});
 }
 function renderDiaryAdmin(){
@@ -257,7 +269,7 @@ function renderContentEditor(){
   const c=view.content||CONTENT_DEFAULTS;let html="";
   for(const group of scalarGroups){html+=`<fieldset class="editor-group"><legend>${escapeHtml(group.title)}</legend><div class="editor-grid">${group.keys.map((key)=>key==="heroMascot"?mascotEditorField(c[key]):inputField(key,c[key],["heroDescription","likesDescription","diaryDescription","diaryCardDescription"].includes(key))).join("")}</div></fieldset>`;}
   html+=`<fieldset class="editor-group"><legend>首页基本介绍</legend><p class="editor-hint">三张简短介绍卡片，会显示在欢迎区下方。</p><div class="editor-cards">${c.profile.map((item,index)=>`<div class="editor-card"><strong>介绍卡片 ${index+1}</strong><label>图标<input data-profile-index="${index}" data-profile-key="icon" maxlength="16" value="${escapeHtml(item.icon)}"></label><label>标题<input data-profile-index="${index}" data-profile-key="title" maxlength="50" value="${escapeHtml(item.title)}"></label><label>说明<input data-profile-index="${index}" data-profile-key="text" maxlength="100" value="${escapeHtml(item.text)}"></label></div>`).join("")}</div></fieldset>`;
-  html+=`<fieldset class="editor-group"><legend>兴趣卡片</legend><p class="editor-hint">每张卡片最多添加 50 个图片、视频、音频或网易云故事专辑链接；单个文件最多 200 MB。兴趣卡片媒体对访客公开显示，网易云链接会在官方页面播放。</p><div id="interestEditorList" class="editor-cards">${c.interests.map((item,index)=>interestEditorCard(item,index)).join("")}</div><button type="button" class="add-interest" id="addInterest">＋ 添加兴趣卡片</button></fieldset>`;
+  html+=`<fieldset class="editor-group"><legend>兴趣卡片</legend><p class="editor-hint">每张卡片最多添加 50 个图片、视频、音频、网易云外链或在线曲目；单个文件最多 200 MB。兴趣卡片媒体对访客公开显示。</p><div id="interestEditorList" class="editor-cards">${c.interests.map((item,index)=>interestEditorCard(item,index)).join("")}</div><button type="button" class="add-interest" id="addInterest">＋ 添加兴趣卡片</button></fieldset>`;
   $("#contentEditor").innerHTML=html;
   $("#uploadMascot").addEventListener("change",uploadMascot);
   $("#resetMascot").addEventListener("click",()=>{const field=$("[data-mascot-value]"),emoji=$("[data-mascot-emoji]"),preview=$("#mascotPreview");field.value="🐻";emoji.value="🐻";preview.textContent="🐻";$("#mascotUploadStatus").textContent="已改回默认小熊；保存首页内容后生效。";});
@@ -265,14 +277,28 @@ function renderContentEditor(){
   $("#addInterest").addEventListener("click",()=>{const list=$("#interestEditorList");if(list.children.length>=8)return;list.insertAdjacentHTML("beforeend",interestEditorCard({icon:"✨",title:"新兴趣",description:"写一写她喜欢做的事情。",tag:"小小发现",media:[]},list.children.length));bindInterestEditor();});
   bindInterestEditor();
 }
-function interestEditorCard(item,index){const media=Array.isArray(item.media)?item.media:[];return `<div class="editor-card interest-editor-card"><div class="editor-card-heading"><strong>兴趣 ${index+1}</strong><button type="button" class="delete" data-remove-interest>删除卡片</button></div><label>图标<input data-interest-index="${index}" data-interest-key="icon" maxlength="16" value="${escapeHtml(item.icon)}"></label><label>标题<input data-interest-index="${index}" data-interest-key="title" maxlength="80" value="${escapeHtml(item.title)}"></label><label>说明<textarea data-interest-index="${index}" data-interest-key="description" maxlength="240">${escapeHtml(item.description)}</textarea></label><label>小标签<input data-interest-index="${index}" data-interest-key="tag" maxlength="60" value="${escapeHtml(item.tag)}"></label><div class="media-manager"><strong>作品、照片、视频和音频</strong><label class="upload-label">选择并上传文件<input type="file" data-upload-interest multiple accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/aac,audio/ogg,audio/wav"></label><span class="upload-status" data-upload-status></span><div class="media-editor-list">${media.map(mediaEditorRow).join("")}</div><div class="netease-add"><input data-netease-title placeholder="故事专辑名称"><input data-netease-url placeholder="网易云分享链接（music.163.com）"><button type="button" data-add-netease>添加故事链接</button></div><small>静态照片自动转 WebP，GIF 动画和视频保留；网易云内容由官方页面播放。</small></div></div>`;}
-function mediaEditorRow(asset){return `<div class="media-editor-row" data-media-type="${escapeHtml(asset.type)}" data-media-url="${escapeHtml(asset.url)}" data-media-name="${escapeHtml(asset.name||"")}"><span class="media-type-icon">${asset.type==="image"?"🖼️":asset.type==="video"?"🎬":asset.type==="audio"?"🎵":"🎧"}</span><input data-media-title maxlength="120" aria-label="作品名称" value="${escapeHtml(asset.title||asset.name||"")}"><button type="button" class="delete" data-remove-media aria-label="移除此内容">移除</button></div>`;}
+function interestEditorCard(item,index){const media=Array.isArray(item.media)?item.media:[];return `<div class="editor-card interest-editor-card"><div class="editor-card-heading"><strong>兴趣 ${index+1}</strong><button type="button" class="delete" data-remove-interest>删除卡片</button></div><label>图标<input data-interest-index="${index}" data-interest-key="icon" maxlength="16" value="${escapeHtml(item.icon)}"></label><label>标题<input data-interest-index="${index}" data-interest-key="title" maxlength="80" value="${escapeHtml(item.title)}"></label><label>说明<textarea data-interest-index="${index}" data-interest-key="description" maxlength="240">${escapeHtml(item.description)}</textarea></label><label>小标签<input data-interest-index="${index}" data-interest-key="tag" maxlength="60" value="${escapeHtml(item.tag)}"></label><div class="media-manager"><strong>作品、照片、视频和音频</strong><label class="upload-label">选择并上传文件<input type="file" data-upload-interest multiple accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/aac,audio/ogg,audio/wav"></label><span class="upload-status" data-upload-status></span><div class="music-search"><input data-music-query placeholder="搜索歌曲或故事名称"><select data-music-kind aria-label="内容类型"><option value="song">歌曲</option><option value="album">故事 / 专辑</option></select><button type="button" data-search-music>搜索在线内容</button></div><div class="music-search-results" data-music-results></div><div class="media-editor-list">${media.map(mediaEditorRow).join("")}</div><div class="netease-add"><input data-netease-title placeholder="故事专辑名称"><input data-netease-url placeholder="网易云分享链接（music.163.com）"><button type="button" data-add-netease>添加网易云外链</button></div><small>静态照片自动转 WebP；网易云外链仍会跳转到官方页面。在线搜索播放需先在“音乐音源”配置兼容 API。</small></div></div>`;}
+function mediaEditorRow(asset){const track=asset.type==="provider-track"?JSON.stringify(asset.track||{}):"";return `<div class="media-editor-row" data-media-type="${escapeHtml(asset.type)}" data-media-url="${escapeHtml(asset.url||"")}" data-media-name="${escapeHtml(asset.name||"")}" data-saved-item-key="${escapeHtml(asset.savedItemKey||"")}" data-track="${escapeHtml(track)}"><span class="media-type-icon">${asset.type==="image"?"🖼️":asset.type==="video"?"🎬":asset.type==="audio"?"🎵":"🎧"}</span><input data-media-title maxlength="120" aria-label="作品名称" value="${escapeHtml(asset.title||asset.name||asset.track?.title||"")}"><button type="button" class="delete" data-remove-media aria-label="移除此内容">移除</button></div>`;}
 function bindInterestEditor(){
   const list=$("#interestEditorList");
   list.querySelectorAll("[data-remove-interest]").forEach((button)=>button.onclick=()=>{if(list.children.length<=1)return;button.closest(".interest-editor-card").remove();renumberInterestEditor();});
   list.querySelectorAll("[data-remove-media]").forEach((button)=>button.onclick=()=>button.closest(".media-editor-row").remove());
   list.querySelectorAll("[data-upload-interest]").forEach((input)=>input.onchange=()=>uploadInterestFiles(input));
   list.querySelectorAll("[data-add-netease]").forEach((button)=>button.onclick=()=>addNeteaseLink(button));
+  list.querySelectorAll("[data-search-music]").forEach((button)=>button.onclick=()=>searchMusicForCard(button));
+  list.querySelectorAll("[data-add-provider-track]").forEach((button)=>button.onclick=()=>addProviderTrack(button));
+}
+async function searchMusicForCard(button){
+  const card=button.closest(".interest-editor-card"),query=card.querySelector("[data-music-query]").value.trim(),kind=card.querySelector("[data-music-kind]").value,results=card.querySelector("[data-music-results]"),status=card.querySelector("[data-upload-status]");
+  if(!query){status.textContent="请先输入歌曲或故事名称。";return;}button.disabled=true;results.innerHTML="";status.textContent="正在搜索已配置音源…";
+  try{const data=await api(`/api/music/search?q=${encodeURIComponent(query)}&kind=${encodeURIComponent(kind)}`,{headers:{}});results.innerHTML=data.results.map((track)=>`<div class="music-result">${track.coverUrl?`<img src="${escapeHtml(track.coverUrl)}" alt="" loading="lazy">`:"<span>🎧</span>"}<div><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml([track.creator,track.collection,track.providerName].filter(Boolean).join(" · "))}</small></div><button type="button" data-add-provider-track data-track="${escapeHtml(JSON.stringify(track))}">添加</button></div>`).join("")||"<p>没有找到结果；可以换个关键词，或继续使用本地上传音频。</p>";if(data.errors.length)status.textContent=data.errors.map((item)=>`${item.providerName}：${item.message}`).join(" ");else status.textContent="";bindInterestEditor();}
+  catch(error){status.textContent=error.message;}
+  finally{button.disabled=false;}
+}
+function addProviderTrack(button){
+  const track=JSON.parse(button.dataset.track||"{}");if(!track.providerId||!track.itemId)return;
+  const asset={type:"provider-track",title:track.title,name:track.providerName,savedItemKey:newUploadId(),track};
+  button.closest(".interest-editor-card").querySelector(".media-editor-list").insertAdjacentHTML("beforeend",mediaEditorRow(asset));button.closest(".music-result").remove();bindInterestEditor();
 }
 async function uploadInterestFiles(input){
   const card=input.closest(".interest-editor-card"),status=card.querySelector("[data-upload-status]"),files=Array.from(input.files||[]);input.disabled=true;
@@ -298,11 +324,24 @@ function renumberInterestEditor(){
 function collectContent(){
   const c={};for(const field of $("#contentEditor").querySelectorAll("[data-content-key]"))c[field.dataset.contentKey]=field.value.trim();
   c.profile=Array.from({length:3},(_,index)=>{const row={};$("#contentEditor").querySelectorAll(`[data-profile-index="${index}"]`).forEach((field)=>row[field.dataset.profileKey]=field.value.trim());return row;});
-  c.interests=Array.from($("#interestEditorList").querySelectorAll(".interest-editor-card"),(card)=>{const item={};card.querySelectorAll("[data-interest-key]").forEach((field)=>item[field.dataset.interestKey]=field.value.trim());item.media=Array.from(card.querySelectorAll(".media-editor-row"),(row)=>({type:row.dataset.mediaType,title:row.querySelector("[data-media-title]").value.trim(),name:row.dataset.mediaName,url:row.dataset.mediaUrl}));return item;});
+  c.interests=Array.from($("#interestEditorList").querySelectorAll(".interest-editor-card"),(card)=>{const item={};card.querySelectorAll("[data-interest-key]").forEach((field)=>item[field.dataset.interestKey]=field.value.trim());item.media=Array.from(card.querySelectorAll(".media-editor-row"),(row)=>{const asset={type:row.dataset.mediaType,title:row.querySelector("[data-media-title]").value.trim(),name:row.dataset.mediaName,url:row.dataset.mediaUrl};if(asset.type==="provider-track"){asset.savedItemKey=row.dataset.savedItemKey;asset.track=JSON.parse(row.dataset.track||"{}");delete asset.url;}return asset;});return item;});
   return c;
 }
-$("#contentButton").addEventListener("click",()=>{renderContentEditor();renderDiaryAdmin();setAdminTab("content");$("#contentStatus").textContent="";contentDialog.showModal();});
-document.querySelectorAll("[data-admin-tab]").forEach((button)=>button.addEventListener("click",()=>setAdminTab(button.dataset.adminTab)));
+function musicSourceRow(source={}){return `<div class="music-source-row" data-source-id="${escapeHtml(source.id||newUploadId())}"><label>显示名称<input data-source-name maxlength="80" value="${escapeHtml(source.name||"")}" placeholder="例如：家庭音乐 API"></label><label>API 地址<input data-source-url type="url" value="${escapeHtml(source.baseUrl||"")}" placeholder="https://你的服务地址/api.php"></label><label>平台代码<input data-source-platform maxlength="40" value="${escapeHtml(source.platform||"netease")}" placeholder="netease / tencent / kugou"></label><label>服务密钥（可选）<input data-source-key type="password" autocomplete="new-password" placeholder="${source.hasKey?"已保存；留空保持不变":"如服务需要，请填写"}"></label><label class="source-enabled"><input data-source-enabled type="checkbox" ${source.enabled===false?"":"checked"}>启用</label><button type="button" class="delete" data-remove-source>删除音源</button><button type="button" class="backup-button" data-test-source>测试连接</button><span class="source-test-status" role="status"></span></div>`;}
+async function renderMusicAdmin(){
+  const list=$("#musicSourceList"),status=$("#musicAdminStatus");if(!list)return;
+  try{const data=await api("/api/music/config",{headers:{}});musicSources=data.sources||[];list.innerHTML=musicSources.map(musicSourceRow).join("")||"<p class=\"editor-hint\">还没有配置音源。点击“添加音源”开始。</p>";bindMusicSourceEditor();status.textContent="";}
+  catch(error){status.textContent=error.message;}
+}
+function bindMusicSourceEditor(){
+  $("#musicSourceList").querySelectorAll("[data-remove-source]").forEach((button)=>button.onclick=()=>button.closest(".music-source-row").remove());
+  $("#musicSourceList").querySelectorAll("[data-test-source]").forEach((button)=>button.onclick=async()=>{const row=button.closest(".music-source-row"),status=row.querySelector(".source-test-status"),source=musicSourceFromRow(row);button.disabled=true;status.textContent="正在测试…";try{const result=await api("/api/music/test",{method:"POST",body:JSON.stringify({source})});status.textContent=result.message;}catch(error){status.textContent=error.message;}finally{button.disabled=false;}});
+}
+function musicSourceFromRow(row){return {id:row.dataset.sourceId,name:row.querySelector("[data-source-name]").value.trim(),baseUrl:row.querySelector("[data-source-url]").value.trim(),platform:row.querySelector("[data-source-platform]").value.trim(),apiKey:row.querySelector("[data-source-key]").value,enabled:row.querySelector("[data-source-enabled]").checked};}
+$("#addMusicSource").addEventListener("click",()=>{$("#musicSourceList").insertAdjacentHTML("beforeend",musicSourceRow());bindMusicSourceEditor();});
+$("#saveMusicSources").addEventListener("click",async()=>{const button=$("#saveMusicSources"),status=$("#musicAdminStatus");button.disabled=true;status.textContent="正在保存…";try{const sources=Array.from($("#musicSourceList").querySelectorAll(".music-source-row"),musicSourceFromRow);await api("/api/music/config",{method:"PUT",body:JSON.stringify({sources})});status.textContent="音源设置已保存。";await renderMusicAdmin();}catch(error){status.textContent=error.message;}finally{button.disabled=false;}});
+$("#contentButton").addEventListener("click",()=>{renderContentEditor();renderDiaryAdmin();renderMusicAdmin();setAdminTab("content");$("#contentStatus").textContent="";contentDialog.showModal();});
+document.querySelectorAll("[data-admin-tab]").forEach((button)=>button.addEventListener("click",()=>{setAdminTab(button.dataset.adminTab);if(button.dataset.adminTab==="music")renderMusicAdmin();}));
 contentDialog.addEventListener("close",()=>{if(diaryEditorOpen){diaryEditorOpen=false;editingRecordId=null;recordMedia=[];renderDiaryAdmin();}});
 $("#contentForm").addEventListener("submit",async(event)=>{
   event.preventDefault();if($("#contentEditor input[type=file]:disabled")){ $("#contentStatus").textContent="请等文件上传完成后再保存。";return;}const button=event.currentTarget.querySelector("button[type=submit]");button.disabled=true;$("#contentStatus").textContent="正在保存…";

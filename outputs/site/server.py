@@ -14,7 +14,8 @@ import sqlite3
 import tarfile
 import tempfile
 import time
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlencode, urlparse
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DIARY_DATA_DIR", ROOT / "data"))
@@ -183,10 +184,133 @@ def validate_content(data):
                 if not title or len(url) > 1000:
                     raise ValueError("请填写故事专辑名称和有效的网易云链接。")
                 entry["media"].append({"type":"netease","title":title,"name":"网易云音乐","url":url})
+            elif kind == "provider-track":
+                track = asset.get("track")
+                if not isinstance(track, dict):
+                    raise ValueError("在线曲目信息无效。")
+                provider_id = str(track.get("providerId", ""))
+                item_id = str(track.get("itemId", ""))
+                saved_key = str(asset.get("savedItemKey", ""))
+                track_kind = str(track.get("kind", "song"))
+                if not re.fullmatch(r"[a-f0-9]{32}", saved_key) or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", provider_id) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", item_id) or track_kind not in ("song", "album"):
+                    raise ValueError("在线曲目标识无效。")
+                clean_track = {"providerId":provider_id,"providerName":str(track.get("providerName", ""))[:80],"itemId":item_id,"kind":track_kind,"title":str(track.get("title", ""))[:160],"creator":str(track.get("creator", ""))[:160],"collection":str(track.get("collection", ""))[:160],"coverUrl":"","durationSeconds":max(0, min(86400, int(track.get("durationSeconds", 0) or 0)))}
+                cover = str(track.get("coverUrl", ""))
+                if cover:
+                    parsed_cover = urlparse(cover)
+                    if parsed_cover.scheme == "https" and parsed_cover.hostname and len(cover) <= 1000:
+                        clean_track["coverUrl"] = cover
+                if not clean_track["title"]:
+                    raise ValueError("在线曲目名称不能为空。")
+                entry["media"].append({"type":"provider-track","title":title or clean_track["title"],"name":clean_track["providerName"],"savedItemKey":saved_key,"track":clean_track})
             else:
                 raise ValueError("作品类型无效。")
         result["interests"].append(entry)
     return result
+
+def get_music_sources(db):
+    row = db.execute("SELECT value FROM settings WHERE key='music_sources'").fetchone()
+    if not row:
+        return []
+    try:
+        sources = json.loads(row["value"])
+        return sources if isinstance(sources, list) else []
+    except (TypeError, json.JSONDecodeError):
+        return []
+
+def sanitize_music_sources(sources):
+    if not isinstance(sources, list) or len(sources) > 5:
+        raise ValueError("最多配置 5 个音源。")
+    result = []
+    seen = set()
+    for item in sources:
+        if not isinstance(item, dict):
+            raise ValueError("音源配置格式无效。")
+        source_id = str(item.get("id", ""))
+        name = str(item.get("name", "")).strip()[:80]
+        base_url = str(item.get("baseUrl", "")).strip().rstrip("/")
+        platform = str(item.get("platform", "")).strip().lower()
+        enabled = bool(item.get("enabled", True))
+        key = str(item.get("apiKey", ""))
+        if not re.fullmatch(r"[a-f0-9]{32}", source_id) or source_id in seen:
+            raise ValueError("音源标识无效。")
+        seen.add(source_id)
+        parsed = urlparse(base_url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password or len(base_url) > 1000:
+            raise ValueError("音源 API 地址必须是有效的 HTTP 或 HTTPS 地址。")
+        if not re.fullmatch(r"[a-z0-9_-]{1,40}", platform) or not name or len(key) > 500:
+            raise ValueError("请填写音源名称、平台代码和有效配置。")
+        result.append({"id":source_id,"name":name,"baseUrl":base_url,"platform":platform,"apiKey":key,"enabled":enabled})
+    return result
+
+def meting_request(source, params, max_bytes=512_000):
+    query = {"server":source["platform"], **params}
+    if source.get("apiKey"):
+        query["token"] = source["apiKey"]
+    separator = "&" if "?" in source["baseUrl"] else "?"
+    url = source["baseUrl"] + separator + urlencode(query)
+    request = Request(url, headers={"Accept":"application/json, text/plain;q=0.9", "User-Agent":"FamilySite/1.0"})
+    with urlopen(request, timeout=8) as response:
+        if response.status < 200 or response.status >= 300:
+            raise ValueError("音源服务暂时不可用。")
+        if int(response.headers.get("Content-Length", "0") or 0) > max_bytes:
+            raise ValueError("音源响应过大。")
+        body = response.read(max_bytes + 1)
+    if len(body) > max_bytes:
+        raise ValueError("音源响应过大。")
+    return body
+
+def search_music_source(source, query, kind="song"):
+    body = meting_request(source, {"type":"search", "id":query, "limit":"20"})
+    try:
+        rows = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError("音源搜索响应格式无效。")
+    if isinstance(rows, dict):
+        rows = rows.get("data", rows.get("result", []))
+    if not isinstance(rows, list):
+        return []
+    results = []
+    for row in rows[:20]:
+        if not isinstance(row, dict):
+            continue
+        item_id = str(row.get("id", row.get("url_id", "")))
+        title = str(row.get("name", row.get("title", ""))).strip()[:160]
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", item_id) or not title:
+            continue
+        artist = row.get("artist", row.get("author", ""))
+        if isinstance(artist, list):
+            artist = ", ".join(map(str, artist[:5]))
+        album = row.get("album", row.get("collection", ""))
+        if isinstance(album, dict):
+            album = album.get("name", "")
+        cover = str(row.get("pic", row.get("cover", row.get("picUrl", ""))))
+        if not (cover.startswith("https://") and len(cover) <= 1000):
+            cover = ""
+        try:
+            duration = int(row.get("duration", row.get("time", 0)) or 0)
+            if duration > 3600:
+                duration //= 1000
+        except (TypeError, ValueError):
+            duration = 0
+        results.append({"providerId":source["id"],"providerName":source["name"],"itemId":item_id,"kind":kind,"title":title,"creator":str(artist)[:160],"collection":str(album)[:160],"coverUrl":cover,"durationSeconds":max(0, min(duration, 86400))})
+    return results
+
+def resolve_music_url(source, item_id):
+    body = meting_request(source, {"type":"url", "id":item_id}, max_bytes=32_000)
+    text = body.decode("utf-8", errors="replace").strip()
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, str):
+            text = payload.strip()
+        elif isinstance(payload, dict):
+            text = str(payload.get("url", payload.get("data", ""))).strip()
+    except json.JSONDecodeError:
+        pass
+    parsed = urlparse(text)
+    if parsed.scheme != "https" or not parsed.hostname or len(text) > 4000:
+        raise ValueError("这个来源暂时无法播放，请检查音源返回的 HTTPS 播放地址。")
+    return text
 
 def connect():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -417,6 +541,47 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/api/music/config":
+            with connect() as db:
+                if not self.session(db):
+                    return self.send_json(401, {"error":"请先登录家长账号。"})
+                sources = [{"id":item["id"],"name":item["name"],"baseUrl":item["baseUrl"],"platform":item["platform"],"enabled":item["enabled"],"hasKey":bool(item.get("apiKey"))} for item in get_music_sources(db)]
+                return self.send_json(200, {"sources":sources})
+        if path == "/api/music/search":
+            with connect() as db:
+                if not self.session(db):
+                    return self.send_json(401, {"error":"请先登录家长账号。"})
+                args = parse_qs(urlparse(self.path).query)
+                query = args.get("q", [""])[0].strip()
+                kind = args.get("kind", ["song"])[0]
+                if not query or len(query) > 100 or kind not in ("song", "album"):
+                    return self.send_json(400, {"error":"请输入不超过 100 个字符的搜索内容。"})
+                results, errors = [], []
+                sources = [source for source in get_music_sources(db) if source.get("enabled")]
+                if not sources:
+                    errors.append({"providerName":"音源设置","message":"请先在“编辑网站”→“音乐音源”配置并启用兼容 API。"})
+                for source in sources:
+                    try:
+                        results.extend(search_music_source(source, query, kind))
+                    except Exception:
+                        errors.append({"providerName":source["name"],"message":"搜索失败或暂时无法连接。"})
+                return self.send_json(200, {"results":results[:60],"errors":errors})
+        play_match = re.fullmatch(r"/api/music/play/([a-f0-9]{32})", path)
+        if play_match:
+            key = play_match.group(1)
+            with connect() as db:
+                content = read_content(db)
+                track = next((asset for item in content.get("interests", []) for asset in item.get("media", []) if asset.get("type") == "provider-track" and asset.get("savedItemKey") == key), None)
+                if not track:
+                    return self.send_json(404, {"error":"这首内容已从兴趣卡片移除。"})
+                source = next((item for item in get_music_sources(db) if item.get("id") == track["track"]["providerId"] and item.get("enabled")), None)
+                if not source:
+                    return self.send_json(503, {"error":"这个音源未配置或已停用。"})
+                try:
+                    media_url = resolve_music_url(source, track["track"]["itemId"])
+                except Exception:
+                    return self.send_json(502, {"error":"这个来源暂时无法播放。"})
+                return self.send_json(200, {"url":media_url})
         if path == "/api/backup":
             with connect() as db:
                 if not self.session(db):
@@ -505,7 +670,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' https: data:; media-src 'self' https:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
         if COOKIE_SECURE:
             self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         self.end_headers()
@@ -573,6 +738,19 @@ class Handler(BaseHTTPRequestHandler):
         if not self.require_same_origin():
             return
         path = urlparse(self.path).path
+        if path == "/api/music/test":
+            with connect() as db:
+                if not self.session(db):
+                    return self.send_json(401, {"error":"请先登录家长账号。"})
+            try:
+                payload = self.read_json()
+                source = sanitize_music_sources([payload.get("source")])[0]
+                search_music_source(source, "小星星")
+            except ValueError as error:
+                return self.send_json(400, {"error":str(error)})
+            except Exception:
+                return self.send_json(502, {"error":"无法连接音源，或响应不符合 Meting API 兼容格式。"})
+            return self.send_json(200, {"ok":True,"message":"连接成功，搜索接口已返回有效响应。"})
         if path == "/api/restore":
             with connect() as db:
                 if not self.session(db):
@@ -916,6 +1094,18 @@ class Handler(BaseHTTPRequestHandler):
         with connect() as db:
             if not self.session(db):
                 return self.send_json(401, {"error": "请先登录家长账号。"})
+            if path == "/api/music/config":
+                try:
+                    sources = sanitize_music_sources(data.get("sources"))
+                except ValueError as error:
+                    return self.send_json(400, {"error":str(error)})
+                existing = {source["id"]:source for source in get_music_sources(db)}
+                for source in sources:
+                    if not source.get("apiKey") and source["id"] in existing:
+                        source["apiKey"] = existing[source["id"]].get("apiKey", "")
+                db.execute("INSERT INTO settings(key,value) VALUES('music_sources',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (json.dumps(sources, ensure_ascii=False),))
+                db.commit()
+                return self.send_json(200, {"ok":True,"sources":[{"id":item["id"],"name":item["name"],"baseUrl":item["baseUrl"],"platform":item["platform"],"enabled":item["enabled"],"hasKey":bool(item.get("apiKey"))} for item in sources]})
             if path == "/api/content":
                 try:
                     content = validate_content(data)
