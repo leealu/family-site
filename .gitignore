@@ -1,0 +1,27 @@
+# Runtime family data: SQLite database, uploaded media, and backups
+**/data/
+**/*.sqlite3
+**/*.db
+*.tar.gz
+
+# Secrets and local environment
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python / OS generated files
+**/__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Generated deployment copies and previews; canonical source is outputs/site/
+/outputs/family-site/
+/outputs/family-site.zip
+/outputs/index.html
+/outputs/*.log
+
+# Local scratch / task state
+/.superpowers/
+/work/

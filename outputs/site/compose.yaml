@@ -1,0 +1,28 @@
+services:
+  family-site:
+    build: .
+    container_name: family-site
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${SITE_PORT:-8000}:8000"
+    environment:
+      PORT: "8000"
+      COOKIE_SECURE: "${COOKIE_SECURE:-0}"
+      DIARY_DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
