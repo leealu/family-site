@@ -33,9 +33,10 @@
 .gallery-dots{display:flex;justify-content:center;flex-wrap:wrap;gap:7px;margin:16px auto 0}.gallery-dots button{width:8px;height:8px;padding:0;border:0;border-radius:50%;background:#e3cedd;cursor:pointer;transition:transform .18s,background .18s}.gallery-dots button.active{transform:scale(1.4);background:#e888a5;box-shadow:0 0 0 3px #fce7ee}
 #diaryLightbox{width:min(96vw,1280px);height:min(94vh,900px);max-width:none;max-height:none;margin:auto;padding:0;overflow:visible;border:0;border-radius:23px;background:transparent;color:white}
 #diaryLightbox[open]{display:block}#diaryLightbox::backdrop{background:#211a2bd9;backdrop-filter:blur(7px)}
-.lightbox-shell{position:relative;display:grid;grid-template-rows:minmax(0,1fr) auto;width:100%;height:100%;overflow:hidden;border:1px solid #ffffff45;border-radius:23px;background:linear-gradient(145deg,#30273bcc,#17141dcc);box-shadow:0 24px 80px #08060d80}
-.lightbox-stage{position:relative;display:grid;place-items:center;min-width:0;min-height:0;padding:52px 68px 18px}
+.lightbox-shell{position:relative;display:grid;grid-template-rows:minmax(0,1fr) auto;width:100%;height:100%;overflow:hidden;border:1px solid #ffffff45;border-radius:23px;background:linear-gradient(145deg,#30273bcc,#17141dcc);box-shadow:0 24px 80px #08060d80;transition:transform .22s ease,opacity .22s ease}
+.lightbox-stage{position:relative;display:grid;place-items:center;min-width:0;min-height:0;padding:52px 68px 18px}.lightbox-stage.is-image{touch-action:none;overscroll-behavior:contain}
 .lightbox-media{display:block;width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 8px 32px #08060d55}
+#diaryLightbox[data-dismiss-dragging] .lightbox-shell{transform:translateY(var(--dismiss-y,0px));opacity:var(--dismiss-opacity,1);transition:none}
 .lightbox-close,.lightbox-nav{position:absolute;z-index:2;display:grid;place-items:center;border:1px solid #ffffff45;background:#ffffff20;color:#fff;backdrop-filter:blur(7px);cursor:pointer;transition:background .2s,opacity .2s}
 .lightbox-close:hover,.lightbox-nav:hover{background:#ffffff45}
 .lightbox-close{top:14px;right:15px;width:42px;height:42px;border-radius:50%;font-size:29px;line-height:1}
@@ -59,6 +60,5 @@
 .gallery-ipod-info audio{display:block;width:min(100%,350px);height:38px;margin-top:2px}
 .gallery-ipod-info .provider-play{min-height:36px;margin-top:5px;padding:7px 20px;border:1px solid #d9c9db;border-radius:999px;background:linear-gradient(#fff,#f1eaf3);color:#5c4d68;font-weight:800;box-shadow:0 2px 0 #dfd3e2;cursor:pointer}
 .gallery-ipod-info [role=status]{color:#a36d82;font-size:10px}
-.lightbox-media{touch-action:pan-y;transition:transform .22s ease;cursor:zoom-in}.lightbox-media.is-zoomed{transform:scale(2);cursor:zoom-out}
+.lightbox-media{touch-action:pan-y;transition:transform .22s ease;cursor:zoom-in}.lightbox-media.is-zoomed{transform:translate(var(--zoom-x,0px),var(--zoom-y,0px)) scale(2);cursor:grab;touch-action:none}.lightbox-media.is-dragging{transition:none}.lightbox-media.is-zoomed.is-dragging{cursor:grabbing}
 @media(max-width:720px){.gallery-ipod{gap:7px;padding:12px 39px}.gallery-track-cover{width:clamp(90px,40%,145px);border-width:3px;border-radius:11px}.gallery-ipod-info strong{font-size:13px}.gallery-ipod-info audio{height:34px}}
-

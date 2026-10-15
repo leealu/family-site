@@ -774,6 +774,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, {"setupRequired": setup_required, "authenticated": bool(token), "sessionExpiresAt":session_row["expires_at"] if session_row else None, "records": visible_records, "content": content})
         if path == "/favicon.svg":
             return self.send_file(ROOT / "favicon.svg", "image/svg+xml; charset=utf-8")
+        if path == "/image-gesture.js":
+            return self.send_file(ROOT / "image-gesture.js", "application/javascript; charset=utf-8")
         media_match = re.fullmatch(r"/media/([a-f0-9]{32}\.[a-z0-9]{2,5})", path)
         if media_match:
             filename = media_match.group(1)
@@ -1301,4 +1303,3 @@ if __name__ == "__main__":
         pass
     print(f"kani的奇妙小世界已启动：http://127.0.0.1:{PORT}")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
-

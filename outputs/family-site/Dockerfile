@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DIARY_DATA_DIR=/app/data
 
 WORKDIR /app
-COPY --chown=10001:10001 server.py index.html app.js style.css admin.css ./
+COPY --chown=10001:10001 server.py index.html app.js image-gesture.js style.css admin.css favicon.svg ./
 USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

@@ -59,4 +59,3 @@
 /* Keep interest cards in one column and contain provider search results within the active card. */
 #interestEditorList{grid-template-columns:minmax(0,1fr);align-items:start}
 #interestEditorList .music-search-results{max-height:min(42vh,420px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:4px}
-

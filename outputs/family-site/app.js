@@ -14,6 +14,7 @@ let lightboxRecordId = null;
 let lightboxGalleryKind = "diary";
 let lightboxIndex = 0;
 let lightboxZoomed = false;
+let lightboxPan = {x:0,y:0};
 let lastLightboxTap = 0;
 let suppressLightboxDblClickUntil = 0;
 let suppressGalleryClickUntil = 0;
@@ -188,7 +189,7 @@ function updateDiaryLightbox(){
   if(!dialog||!gallery?.items.length){dialog?.close();return;}
   lightboxIndex=Math.max(0,Math.min(lightboxIndex,gallery.items.length-1));
   const asset=gallery.items[lightboxIndex],stage=$("#lightboxStage"),caption=$("#lightboxCaption"),counter=$("#lightboxCounter");
-  lightboxZoomed=false;lastLightboxTap=0;
+  lightboxZoomed=false;lightboxPan={x:0,y:0};lastLightboxTap=0;stage.classList.toggle("is-image",asset.type==="image");dialog.style.removeProperty("--dismiss-y");dialog.style.removeProperty("--dismiss-opacity");dialog.removeAttribute("data-dismiss-dragging");
   stage.innerHTML=asset.type==="video"?`<video class="lightbox-media" controls autoplay playsinline src="${escapeHtml(asset.url)}"></video>`:asset.type==="audio"?`<div class="lightbox-audio"><strong>🎵 ${escapeHtml(asset.title||asset.name||gallery.title)}</strong><audio controls src="${escapeHtml(asset.url)}"></audio></div>`:asset.type==="netease"?`<a class="lightbox-netease" href="${escapeHtml(asset.url)}" target="_blank" rel="noopener noreferrer">🎧 ${escapeHtml(asset.title||gallery.title)}<small>打开网易云音乐播放 ↗</small></a>`:`<img class="lightbox-media" src="${escapeHtml(asset.url)}" alt="${escapeHtml(asset.title||asset.name||gallery.title)}">`;
   caption.textContent=asset.title||asset.name||gallery.title;counter.textContent=`${lightboxIndex+1} / ${gallery.items.length}${asset.type==="image"?" · 双击放大":""}`;
   $("#lightboxPrevious").hidden=gallery.items.length<2;$("#lightboxNext").hidden=gallery.items.length<2;
@@ -225,9 +226,69 @@ function bindHorizontalSwipe(element,onSwipe){
   },{passive:true});
   element.addEventListener("pointercancel",()=>{start=null;},{passive:true});
 }
+function lightboxPanLimits(image,stage){
+  const style=getComputedStyle(stage),width=stage.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),height=stage.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom);
+  return FamilyImageGestures.panLimits(image.offsetWidth,image.offsetHeight,width,height);
+}
+function applyLightboxPan(image){image.style.setProperty("--zoom-x",`${lightboxPan.x}px`);image.style.setProperty("--zoom-y",`${lightboxPan.y}px`);}
+function navigateLightbox(direction){
+  if(direction<0&&$("#lightboxPrevious").disabled)return false;
+  if(direction>0&&$("#lightboxNext").disabled)return false;
+  stopGalleryPlayback();lightboxIndex+=direction;updateDiaryLightbox();return true;
+}
+function bindLightboxGestures(stage){
+  let gesture=null;
+  const clearDismissDrag=()=>{const dialog=$("#diaryLightbox");dialog.removeAttribute("data-dismiss-dragging");dialog.style.removeProperty("--dismiss-y");dialog.style.removeProperty("--dismiss-opacity");};
+  const showDismissDrag=(delta)=>{const dialog=$("#diaryLightbox");dialog.setAttribute("data-dismiss-dragging","");dialog.style.setProperty("--dismiss-y",`${delta.y}px`);dialog.style.setProperty("--dismiss-opacity",String(Math.max(.2,1-Math.abs(delta.y)/520)));};
+  const finish=(event,cancelled=false)=>{
+    if(!gesture||event.pointerId!==gesture.pointerId)return;
+    const current=gesture;gesture=null;
+    const image=stage.querySelector("img.lightbox-media");image?.classList.remove("is-dragging");
+    if(cancelled){clearDismissDrag();return;}
+    const delta={x:event.clientX-current.x,y:event.clientY-current.y};
+    const result=FamilyImageGestures.resolveImageGesture({zoomed:current.zoomed,pan:current.pan,delta,limits:current.limits});
+    if(result.action==="pan"){
+      lightboxPan=result.pan;if(image)applyLightboxPan(image);clearDismissDrag();return;
+    }
+    if(result.action==="close"){$("#diaryLightbox").close();suppressGalleryClickUntil=Date.now()+450;return;}
+    clearDismissDrag();
+    if(result.action==="next"||result.action==="previous"){
+      if(navigateLightbox(result.action==="next"?1:-1))suppressGalleryClickUntil=Date.now()+450;
+      return;
+    }
+    if(Math.abs(delta.x)<14&&Math.abs(delta.y)<14){
+      const now=Date.now();
+      if(now-lastLightboxTap<350){toggleLightboxZoom();lastLightboxTap=0;suppressLightboxDblClickUntil=now+450;}
+      else lastLightboxTap=now;
+    }
+  };
+  stage.addEventListener("pointerdown",(event)=>{
+    const image=event.target.closest("img.lightbox-media");
+    if((event.pointerType!=="touch"&&event.pointerType!=="pen")||!image||event.isPrimary===false)return;
+    gesture={pointerId:event.pointerId,x:event.clientX,y:event.clientY,pan:{...lightboxPan},zoomed:lightboxZoomed,limits:lightboxPanLimits(image,stage)};
+    image.classList.add("is-dragging");
+  },{passive:true});
+  window.addEventListener("pointermove",(event)=>{
+    if(!gesture||event.pointerId!==gesture.pointerId)return;
+    const delta={x:event.clientX-gesture.x,y:event.clientY-gesture.y};
+    if(gesture.zoomed){
+      const image=stage.querySelector("img.lightbox-media");
+      const result=FamilyImageGestures.resolveImageGesture({zoomed:true,pan:gesture.pan,delta,limits:gesture.limits});
+      if(result.action==="pan"){lightboxPan=result.pan;if(image)applyLightboxPan(image);clearDismissDrag();}
+      else if(result.action==="close")showDismissDrag(delta);
+      else finish(event);
+      return;
+    }
+    if(Math.abs(delta.y)>Math.abs(delta.x)*1.15&&Math.abs(delta.y)>8){
+      showDismissDrag(delta);
+    }else clearDismissDrag();
+  },{passive:true});
+  window.addEventListener("pointerup",(event)=>finish(event),{passive:true});
+  window.addEventListener("pointercancel",(event)=>finish(event,true),{passive:true});
+}
 function toggleLightboxZoom(){
   const image=$("#lightboxStage .lightbox-media:not(video)");if(!image)return;
-  lightboxZoomed=!lightboxZoomed;image.classList.toggle("is-zoomed",lightboxZoomed);image.setAttribute("aria-label",lightboxZoomed?"已放大，双击还原":"双击放大查看");
+  lightboxZoomed=!lightboxZoomed;lightboxPan={x:0,y:0};image.style.setProperty("--zoom-x","0px");image.style.setProperty("--zoom-y","0px");image.classList.toggle("is-zoomed",lightboxZoomed);image.setAttribute("aria-label",lightboxZoomed?"已放大，可拖动查看细节，双击还原":"双击放大查看");
 }
 function stopGalleryPlayback(){stopActiveAudio();document.querySelectorAll(".gallery-ipod audio").forEach((audio)=>{audio.pause();audio.currentTime=0;});}
 function diaryMediaEditor(){
@@ -438,12 +499,12 @@ $("#restoreBackupInput").addEventListener("change",async(event)=>{
 });
 $("#chooseRestoreBackup").addEventListener("click",()=>$("#restoreBackupInput").click());
 $("#lightboxClose").addEventListener("click",()=>$("#diaryLightbox").close());
-$("#lightboxPrevious").addEventListener("click",()=>{stopGalleryPlayback();lightboxIndex--;updateDiaryLightbox();});
-$("#lightboxNext").addEventListener("click",()=>{stopGalleryPlayback();lightboxIndex++;updateDiaryLightbox();});
+$("#lightboxPrevious").addEventListener("click",()=>navigateLightbox(-1));
+$("#lightboxNext").addEventListener("click",()=>navigateLightbox(1));
 $("#diaryLightbox").addEventListener("click",(event)=>{if(event.target===event.currentTarget)event.currentTarget.close();});
 $("#lightboxStage").addEventListener("dblclick",(event)=>{if(event.target.matches(".lightbox-media:not(video)")){event.preventDefault();if(Date.now()>=suppressLightboxDblClickUntil)toggleLightboxZoom();}});
-bindHorizontalSwipe($("#lightboxStage"),(direction)=>{if(direction<0&&$("#lightboxPrevious").disabled)return;if(direction>0&&$("#lightboxNext").disabled)return;lightboxIndex+=direction;updateDiaryLightbox();});
-$("#diaryLightbox").addEventListener("close",()=>{$("#lightboxStage").replaceChildren();lightboxRecordId=null;lightboxZoomed=false;lastLightboxTap=0;});
+bindLightboxGestures($("#lightboxStage"));
+$("#diaryLightbox").addEventListener("close",()=>{$("#lightboxStage").replaceChildren();$("#lightboxStage").classList.remove("is-image");$("#diaryLightbox").style.removeProperty("--dismiss-y");$("#diaryLightbox").style.removeProperty("--dismiss-opacity");$("#diaryLightbox").removeAttribute("data-dismiss-dragging");lightboxRecordId=null;lightboxZoomed=false;lightboxPan={x:0,y:0};lastLightboxTap=0;});
 window.addEventListener("keydown",(event)=>{
   const dialog=$("#diaryLightbox");if(!dialog.open)return;
   if(event.key==="ArrowLeft"&&!$("#lightboxPrevious").disabled){event.preventDefault();stopGalleryPlayback();lightboxIndex--;updateDiaryLightbox();}
@@ -453,4 +514,3 @@ const backToTop=$("#backToTop");
 window.addEventListener("scroll",()=>backToTop.classList.toggle("visible",window.scrollY>420),{passive:true});
 backToTop.addEventListener("click",()=>window.scrollTo({top:0,behavior:"smooth"}));
 loadState();
-
